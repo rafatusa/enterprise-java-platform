@@ -304,7 +304,7 @@ stages:
       SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      APP_AUTH_PASSWORD_HASH: ${{ secrets.APP_AUTH_PASSWORD_HASH }}
+      APP_AUTH_PASSWORD: ${{ secrets.APP_AUTH_PASSWORD }}
       APP_VERSION: ${{ github.sha }}
     steps:
       - name: Set up Terraform
@@ -340,7 +340,7 @@ stages:
             --private-key ~/.ssh/deploy_key ansible/site.yml \
             -e "db_password=$DB_PASSWORD" \
             -e "jwt_secret=$JWT_SECRET" \
-            -e "app_auth_password_hash=$APP_AUTH_PASSWORD_HASH" \
+            -e "app_auth_password=$APP_AUTH_PASSWORD" \
             -e "app_version=$APP_VERSION"
 
   - id: verify

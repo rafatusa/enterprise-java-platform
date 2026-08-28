@@ -31,13 +31,40 @@
           - app_version is defined and app_version | length > 0
           - db_password is defined and db_password | length > 0
           - jwt_secret is defined and jwt_secret | length > 0
-          - app_auth_password_hash is defined and app_auth_password_hash | length > 0
+          - app_auth_password is defined and app_auth_password | length > 0
         fail_msg: >-
-          app_version, db_password, jwt_secret and app_auth_password_hash must all
-          be supplied with -e. The configure stage passes these from repository
-          secrets (DB_PASSWORD, JWT_SECRET, APP_AUTH_PASSWORD_HASH). The
-          application has no default credentials by design, so a missing secret
-          fails here rather than deploying a known password.
+          app_version, db_password, jwt_secret and app_auth_password must all be
+          supplied with -e. The configure stage passes these from repository
+          secrets (DB_PASSWORD, JWT_SECRET, APP_AUTH_PASSWORD). The application
+          has no default credentials by design, so a missing secret fails here
+          rather than deploying a known password.
+
+    # The bcrypt hash is DERIVED from the plaintext on the host rather than
+    # supplied as a second secret.
+    #
+    # Storing both halves independently means they can drift: rotate one without
+    # the other and every login returns 401, which reads like a security
+    # misconfiguration rather than a mismatched pair. Deriving one from the other
+    # makes that impossible, and halves the number of secrets to rotate.
+    #
+    # password_hash('bcrypt') is backed by passlib + bcrypt, which the Puppet
+    # baseline installs from the Ubuntu archive (python3-passlib, python3-bcrypt)
+    # — no pip bootstrap and no PyPI dependency in the deploy path.
+    - name: Derive the operator password hash from the supplied plaintext
+      ansible.builtin.set_fact:
+        app_auth_password_hash: "{{ app_auth_password | password_hash('bcrypt', rounds=10, ident='2a') }}"
+      no_log: true
+
+    - name: Confirm the hash was produced
+      ansible.builtin.assert:
+        that:
+          - app_auth_password_hash is defined
+          - app_auth_password_hash.startswith('$2a$')
+        fail_msg: >-
+          password_hash('bcrypt') did not return a bcrypt hash. This means
+          passlib/bcrypt are missing on the host — the Puppet baseline installs
+          python3-passlib and python3-bcrypt, so puppet-bootstrap.yml either did
+          not run or did not converge before this playbook.
 
   roles:
     - role: postgresql

@@ -7,7 +7,13 @@ class baseline {
     'nginx',
     'postgresql',
     'postgresql-contrib',
+    # community.postgresql modules need psycopg2 on the managed host.
     'python3-psycopg2',
+    # Ansible's password_hash('bcrypt') filter is backed by passlib, which needs
+    # the bcrypt backend. Both come from the Ubuntu 22.04 base archive, so the
+    # deploy does not have to bootstrap pip or reach PyPI to hash a password.
+    'python3-passlib',
+    'python3-bcrypt',
     'unzip',
     'curl',
     'jq',

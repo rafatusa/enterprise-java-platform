@@ -90,6 +90,12 @@ code and fails the build.
 Do not "simplify" this back into a single `mvn` invocation — you would lose the
 report on exactly the runs where you need it.
 
+Each gate script also **prints its findings** (rule, `file:line`, message) rather
+than pointing at an artifact, and distinguishes *"the scanner found a problem"*
+from *"the scanner could not run"*. Both fail the build — unscanned code is
+unverified, not approved — but the remedies are completely different, so the
+message says which.
+
 ### Rollback
 
 Rollback is owned by `scripts/ci/verify-with-rollback.sh`, not by a CI
@@ -154,6 +160,11 @@ Tests run against in-memory H2 in PostgreSQL compatibility mode, so no database
 is needed locally. The real PostgreSQL schema is exercised on the deployed host
 by the smoke tests.
 
+Integration tests need no credential fixture: `TestCredentials` generates a
+random operator password per JVM and injects the matching bcrypt hash before the
+context starts, so there is no credential literal in the repository and the pair
+can never drift.
+
 ## Required secrets
 
 Set automatically by the platform: `PROJECT_NAME`, `TF_STATE_BUCKET`,
@@ -165,12 +176,17 @@ Set for this project:
 | Secret | Purpose | Required |
 |--------|---------|----------|
 | `DB_PASSWORD` | PostgreSQL application role | yes |
-| `JWT_SECRET` | HS256 token signing key | yes |
-| `APP_AUTH_PASSWORD` | Operator password used by smoke + k6 | yes |
-| `APP_AUTH_PASSWORD_HASH` | bcrypt hash of the above, deployed to the host | yes |
+| `JWT_SECRET` | HS256 token signing key (≥ 32 bytes) | yes |
+| `APP_AUTH_PASSWORD` | Operator password — used by the app, smoke tests and k6 | yes |
 | `SONAR_TOKEN`, `SONAR_HOST_URL` | SonarQube analysis | optional — stage skips with a warning |
 | `PACT_BROKER_URL`, `PACT_BROKER_TOKEN` | Publish contract results | optional — verifies locally without |
 | `NVD_API_KEY` | Speeds up OWASP Dependency Check | optional — slow without |
+
+There is deliberately **no `APP_AUTH_PASSWORD_HASH` secret**. The bcrypt hash the
+application stores is derived from `APP_AUTH_PASSWORD` on the host during the
+configure stage. Two independent secrets holding two halves of one credential can
+drift — rotate one and every login returns 401, which looks like a broken
+security configuration rather than a mismatched pair.
 
 **Optional means the stage degrades visibly, not silently.** SonarQube and Pact
 both require servers this project does not provision; making them hard failures
@@ -200,8 +216,9 @@ broker.
   log groups; no credentials are stored on the host.
 - SSH accepts key auth only — no passwords, no root login (Puppet `hardening`).
 - `.env` on the host is mode `0640`, owned by `appuser`, written with `no_log`.
-- Test signing keys are **generated at runtime** (`TestKeys`), never committed,
-  so no key-shaped literal exists in the repository for a scanner to miss.
+- Test signing keys and the test operator password are **generated at runtime**
+  (`TestKeys`, `TestCredentials`), never committed, so no credential-shaped
+  literal exists in the repository for a scanner to miss.
 - There is **no default credential anywhere**: `application.properties` and
   `app.env.j2` ship no fallback password or signing key, and `site.yml` asserts
   the secrets are present, so a missing secret fails the deploy loudly.

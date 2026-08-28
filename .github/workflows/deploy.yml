@@ -321,7 +321,7 @@ jobs:
       SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      APP_AUTH_PASSWORD_HASH: ${{ secrets.APP_AUTH_PASSWORD_HASH }}
+      APP_AUTH_PASSWORD: ${{ secrets.APP_AUTH_PASSWORD }}
       APP_VERSION: ${{ github.sha }}
     timeout-minutes: 45
     steps:
@@ -359,7 +359,7 @@ jobs:
       run: "~/.local/bin/ansible-playbook -i \"${{ steps.infra.outputs.ip }},\" -u\
         \ \"$SSH_USER\" \\\n  --private-key ~/.ssh/deploy_key ansible/site.yml \\\n\
         \  -e \"db_password=$DB_PASSWORD\" \\\n  -e \"jwt_secret=$JWT_SECRET\" \\\n\
-        \  -e \"app_auth_password_hash=$APP_AUTH_PASSWORD_HASH\" \\\n  -e \"app_version=$APP_VERSION\"\
+        \  -e \"app_auth_password=$APP_AUTH_PASSWORD\" \\\n  -e \"app_version=$APP_VERSION\"\
         \n"
   verify:
     runs-on: ubuntu-latest

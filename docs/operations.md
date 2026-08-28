@@ -103,18 +103,29 @@ action, which reverts the repository to the last green deploy and redeploys.
 |--------|-------------|----------------|
 | `DB_PASSWORD` | Suspected exposure, staff change | Redeploy (Ansible resets the role password) |
 | `JWT_SECRET` | Suspected exposure | Redeploy — **all issued tokens become invalid** |
-| `APP_AUTH_PASSWORD` + `APP_AUTH_PASSWORD_HASH` | Staff change | Must be rotated **together** |
+| `APP_AUTH_PASSWORD` | Staff change, suspected exposure | Redeploy |
 | `SONAR_TOKEN`, `PACT_BROKER_TOKEN`, `NVD_API_KEY` | Provider policy | Next run picks them up |
 
-Generate a password and its hash together — they must match or login breaks:
+### Rotating the operator password
+
+Only **one** secret holds the operator credential. Set `APP_AUTH_PASSWORD` and
+redeploy:
 
 ```bash
-PW=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)
-echo "APP_AUTH_PASSWORD=$PW"
-htpasswd -bnBC 10 "" "$PW" | tr -d ':\n' | sed 's/\$2y/\$2a/'   # the hash
+LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32; echo
 ```
 
-Set both as repository secrets, then redeploy.
+The bcrypt hash that the application actually stores is **derived on the host**
+during the configure stage (`ansible/site.yml` runs `password_hash('bcrypt')`
+over the supplied plaintext). There is deliberately no `APP_AUTH_PASSWORD_HASH`
+secret:
+
+> Storing a password and its hash as two independent secrets means they can
+> drift. Rotate one and forget the other and every login returns 401 — which
+> reads like a broken security configuration rather than a mismatched pair, and
+> sends people debugging JWT and Spring Security instead of the credential.
+> Deriving one from the other makes that failure impossible and halves what you
+> have to rotate.
 
 > Passwords must be **alphanumeric only**. `%`, `$`, quotes and URL-special
 > characters break connection strings, shell interpolation and property files.
