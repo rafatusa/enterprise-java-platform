@@ -1,0 +1,96 @@
+<?xml version="1.0"?>
+<ruleset name="enterprise-java-platform"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+  <description>
+    PMD ruleset for enterprise-java-platform.
+
+    THRESHOLD: the POM sets failurePriority=3, so priority 1-3 findings fail the
+    build while 4-5 (stylistic opinions) are reported and tolerated. That is the
+    "PMD violations exceed threshold" gate — the threshold is SEVERITY, not a
+    count, because ten trivial findings are not worth a broken release while a
+    single priority-1 resource leak certainly is.
+
+    SELECTION: this ruleset picks the categories that find DEFECTS (errorprone,
+    security, performance, multithreading) plus the parts of bestpractices and
+    design that survive contact with Spring. Rules excluded below are excluded
+    because they structurally contradict the framework's idioms — a rule that
+    fires on every correctly-written @Service teaches people to ignore PMD.
+  </description>
+
+  <rule ref="category/java/errorprone.xml">
+    <!-- JPA entities and Spring components are not serialized by us. -->
+    <exclude name="MissingSerialVersionUID"/>
+    <exclude name="BeanMembersShouldSerialize"/>
+    <!-- Superseded and extremely noisy on ordinary local-variable use. -->
+    <exclude name="DataflowAnomalyAnalysis"/>
+    <!-- Constructor injection assigns fields before the object escapes. -->
+    <exclude name="ConstructorCallsOverridableMethod"/>
+    <!-- Fires on every @Value-injected default. -->
+    <exclude name="AvoidLiteralsInIfCondition"/>
+  </rule>
+
+  <rule ref="category/java/security.xml"/>
+
+  <rule ref="category/java/performance.xml">
+    <!-- Fires on string concatenation in log/exception messages. -->
+    <exclude name="AvoidInstantiatingObjectsInLoops"/>
+  </rule>
+
+  <rule ref="category/java/multithreading.xml">
+    <!-- Spring singletons are container-managed; floods on @Service fields. -->
+    <exclude name="UseConcurrentHashMap"/>
+    <exclude name="DoNotUseThreads"/>
+  </rule>
+
+  <rule ref="category/java/bestpractices.xml">
+    <!-- Tests are not analysed (includeTests=false), so JUnit rules are moot. -->
+    <exclude name="JUnitTestsShouldIncludeAssert"/>
+    <exclude name="JUnitAssertionsShouldIncludeMessage"/>
+    <exclude name="JUnitTestContainsTooManyAsserts"/>
+    <!-- We use SLF4J via Spring Boot; this rule targets raw java.util.logging. -->
+    <exclude name="GuardLogStatement"/>
+    <!-- Spring injects into private fields of @Configuration by design. -->
+    <exclude name="UnusedPrivateField"/>
+    <!-- Records and DTOs legitimately expose their components. -->
+    <exclude name="MethodReturnsInternalArray"/>
+    <exclude name="ArrayIsStoredDirectly"/>
+  </rule>
+
+  <!--
+    design: only the complexity rules, which measure something real. The rest of
+    the category (LawOfDemeter, OnlyOneReturn, ExcessiveImports, TooManyMethods,
+    DataClass, LoosePackageCoupling) encodes contested style preferences that
+    fire constantly on idiomatic Spring layering.
+  -->
+  <rule ref="category/java/design.xml/CyclomaticComplexity">
+    <properties>
+      <property name="methodReportLevel" value="12"/>
+      <property name="classReportLevel" value="60"/>
+    </properties>
+  </rule>
+
+  <rule ref="category/java/design.xml/NPathComplexity">
+    <properties>
+      <property name="reportLevel" value="200"/>
+    </properties>
+  </rule>
+
+  <rule ref="category/java/design.xml/ExcessiveParameterList">
+    <properties>
+      <property name="minimum" value="8"/>
+    </properties>
+  </rule>
+
+  <rule ref="category/java/design.xml/CognitiveComplexity">
+    <properties>
+      <property name="reportLevel" value="20"/>
+    </properties>
+  </rule>
+
+  <rule ref="category/java/design.xml/CollapsibleIfStatements"/>
+  <rule ref="category/java/design.xml/SimplifiedTernary"/>
+  <rule ref="category/java/design.xml/UselessOverridingMethod"/>
+</ruleset>

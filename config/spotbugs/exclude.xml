@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs exclusions.
+
+  Each exclusion below is a documented false-positive class for Spring Boot,
+  NOT a way to silence real findings. The POM runs at threshold=High with
+  failOnError=true, so anything genuinely high-priority still breaks the build.
+-->
+<FindBugsFilter>
+
+  <!-- Spring injects dependencies into final fields via constructor; SpotBugs
+       reads the stored reference as externally mutable. Standard Spring DI. -->
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    <Or>
+      <Package name="~com\.example\.app\.controller.*"/>
+      <Package name="~com\.example\.app\.service.*"/>
+      <Package name="~com\.example\.app\.config.*"/>
+    </Or>
+  </Match>
+
+  <!-- JPA entities require a no-arg constructor and mutable fields by design. -->
+  <Match>
+    <Package name="~com\.example\.app\.entity.*"/>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2,URF_UNREAD_FIELD"/>
+  </Match>
+
+  <!-- Generated/boilerplate: the Spring Boot entry point. -->
+  <Match>
+    <Class name="com.example.app.Application"/>
+    <Bug pattern="DM_EXIT,UUF_UNUSED_FIELD"/>
+  </Match>
+
+  <!-- Tests are not analysed, but be explicit. -->
+  <Match>
+    <Class name="~.*Test$"/>
+  </Match>
+  <Match>
+    <Class name="~.*IT$"/>
+  </Match>
+
+</FindBugsFilter>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise Java Platform</title>
+  <style>
+    :root {
+      --bg: #0f172a; --panel: #1e293b; --line: #334155;
+      --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8; --ok: #4ade80;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.6;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 3rem 1.5rem; }
+    header { border-bottom: 1px solid var(--line); padding-bottom: 2rem; margin-bottom: 2rem; }
+    h1 { margin: 0 0 .5rem; font-size: 2rem; letter-spacing: -.02em; }
+    .sub { color: var(--muted); margin: 0; }
+    .status {
+      display: inline-flex; align-items: center; gap: .5rem;
+      background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3);
+      color: var(--ok); padding: .35rem .75rem; border-radius: 999px;
+      font-size: .8rem; margin-top: 1rem;
+    }
+    .dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--ok); }
+    h2 { font-size: 1.1rem; margin: 2rem 0 1rem; color: var(--accent); }
+    .grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .card {
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 8px; padding: 1rem;
+    }
+    .card a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .card a:hover { text-decoration: underline; }
+    .card p { margin: .35rem 0 0; color: var(--muted); font-size: .875rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+    th, td { text-align: left; padding: .6rem .5rem; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 500; }
+    code {
+      background: #0b1220; border: 1px solid var(--line); border-radius: 4px;
+      padding: .1rem .4rem; font-size: .85em; color: var(--accent);
+    }
+    footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line);
+      color: var(--muted); font-size: .8rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Enterprise Java Platform</h1>
+      <p class="sub">Spring Boot task API on AWS EC2 — PostgreSQL, nginx, and a fully gated delivery pipeline.</p>
+      <div class="status"><span class="dot"></span> Service running</div>
+    </header>
+
+    <h2>Explore</h2>
+    <div class="grid">
+      <div class="card">
+        <a href="/swagger-ui/index.html">Swagger UI</a>
+        <p>Interactive API reference. Authorize with a bearer token to call protected endpoints.</p>
+      </div>
+      <div class="card">
+        <a href="/v3/api-docs">OpenAPI document</a>
+        <p>Machine-readable specification for client generation.</p>
+      </div>
+      <div class="card">
+        <a href="/actuator/health">Health</a>
+        <p>Liveness, readiness and the PostgreSQL connectivity indicator.</p>
+      </div>
+      <div class="card">
+        <a href="/actuator/info">Build info</a>
+        <p>Deployed version, JVM and operating system details.</p>
+      </div>
+    </div>
+
+    <h2>API</h2>
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/api/v1/auth/login</code></td><td>Exchange credentials for a JWT</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/tasks</code></td><td>List tasks, optionally filtered by status</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/tasks/urgent</code></td><td>Tasks at priority 1 or 2</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/tasks</code></td><td>Create a task</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/tasks/{id}</code></td><td>Fetch one task</td></tr>
+        <tr><td>PUT</td><td><code>/api/v1/tasks/{id}</code></td><td>Replace editable fields</td></tr>
+        <tr><td>PATCH</td><td><code>/api/v1/tasks/{id}/status</code></td><td>Transition status</td></tr>
+        <tr><td>DELETE</td><td><code>/api/v1/tasks/{id}</code></td><td>Delete a task</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Quick start</h2>
+    <div class="card">
+      <p style="color:var(--text)">Obtain a token, then call a protected endpoint:</p>
+      <p><code>curl -X POST /api/v1/auth/login -H 'Content-Type: application/json' -d '{"username":"operator","password":"..."}'</code></p>
+      <p><code>curl /api/v1/tasks -H 'Authorization: Bearer &lt;token&gt;'</code></p>
+    </div>
+
+    <footer>
+      Every release passes 90% line / 85% branch coverage, 70% mutation score,
+      zero critical or high vulnerabilities, and a 200-user load test under a
+      400&nbsp;ms p95 budget.
+      <br><br>
+      Built and deployed with <strong>UDAP</strong>.
+    </footer>
+  </div>
+</body>
+</html>

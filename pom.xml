@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.3.5</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.example</groupId>
+  <artifactId>enterprise-java-platform</artifactId>
+  <version>1.0.0</version>
+  <name>enterprise-java-platform</name>
+  <description>Enterprise Spring Boot platform with full quality and security gates</description>
+
+  <properties>
+    <java.version>17</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <!-- Quality gate thresholds. Single source of truth: raising or lowering a
+         gate happens HERE, deliberately, in review — never in a CI step. -->
+    <jacoco.line.coverage>0.90</jacoco.line.coverage>
+    <jacoco.branch.coverage>0.85</jacoco.branch.coverage>
+    <pit.mutation.threshold>70</pit.mutation.threshold>
+    <owasp.fail.cvss>7</owasp.fail.cvss>
+
+    <!-- Plugin versions -->
+    <jacoco.version>0.8.12</jacoco.version>
+    <pitest.version>1.17.0</pitest.version>
+    <pitest.junit5.version>1.2.1</pitest.junit5.version>
+    <spotless.version>2.43.0</spotless.version>
+    <checkstyle.plugin.version>3.5.0</checkstyle.plugin.version>
+    <checkstyle.version>10.18.2</checkstyle.version>
+    <pmd.version>3.25.0</pmd.version>
+    <spotbugs.version>4.8.6.4</spotbugs.version>
+    <dependency.check.version>10.0.4</dependency.check.version>
+    <cyclonedx.version>2.9.0</cyclonedx.version>
+    <sonar.version>4.0.0.4121</sonar.version>
+    <rest.assured.version>5.5.0</rest.assured.version>
+    <pact.version>4.6.14</pact.version>
+    <springdoc.version>2.6.0</springdoc.version>
+    <jjwt.version>0.12.6</jjwt.version>
+
+    <!-- Sonar reads the aggregated JaCoCo XML so unit + IT both count. -->
+    <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <version>${springdoc.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-api</artifactId>
+      <version>${jjwt.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-impl</artifactId>
+      <version>${jjwt.version}</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-jackson</artifactId>
+      <version>${jjwt.version}</version>
+      <scope>runtime</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!-- Test scope -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.rest-assured</groupId>
+      <artifactId>rest-assured</artifactId>
+      <version>${rest.assured.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>au.com.dius.pact.provider</groupId>
+      <artifactId>junit5spring</artifactId>
+      <version>${pact.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>app</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+
+      <!-- Unit tests: *Test. Integration tests are handled by failsafe. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <includes>
+            <include>**/*Test.java</include>
+          </includes>
+          <excludes>
+            <exclude>**/*IT.java</exclude>
+            <exclude>**/*PactTest.java</exclude>
+          </excludes>
+        </configuration>
+      </plugin>
+
+      <!-- Integration tests: *IT (Spring Boot IT + REST Assured). -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <includes>
+            <include>**/*IT.java</include>
+          </includes>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- COVERAGE GATE: line 90% / branch 85%. jacoco:check FAILS the build. -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <executions>
+          <execution>
+            <id>prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>prepare-agent-integration</id>
+            <goals>
+              <goal>prepare-agent-integration</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>merge-results</id>
+            <phase>post-integration-test</phase>
+            <goals>
+              <goal>merge</goal>
+            </goals>
+            <configuration>
+              <fileSets>
+                <fileSet>
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <include>*.exec</include>
+                  </includes>
+                </fileSet>
+              </fileSets>
+              <destFile>${project.build.directory}/jacoco.exec</destFile>
+            </configuration>
+          </execution>
+          <execution>
+            <id>report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+            <configuration>
+              <dataFile>${project.build.directory}/jacoco.exec</dataFile>
+            </configuration>
+          </execution>
+        </executions>
+        <configuration>
+          <excludes>
+            <exclude>**/Application.class</exclude>
+            <exclude>**/config/**</exclude>
+            <exclude>**/dto/**</exclude>
+            <exclude>**/entity/**</exclude>
+          </excludes>
+          <rules>
+            <rule>
+              <element>BUNDLE</element>
+              <limits>
+                <limit>
+                  <counter>LINE</counter>
+                  <value>COVEREDRATIO</value>
+                  <minimum>${jacoco.line.coverage}</minimum>
+                </limit>
+                <limit>
+                  <counter>BRANCH</counter>
+                  <value>COVEREDRATIO</value>
+                  <minimum>${jacoco.branch.coverage}</minimum>
+                </limit>
+              </limits>
+            </rule>
+          </rules>
+        </configuration>
+      </plugin>
+
+      <!-- MUTATION GATE: build fails below 70% mutation score. -->
+      <plugin>
+        <groupId>org.pitest</groupId>
+        <artifactId>pitest-maven</artifactId>
+        <version>${pitest.version}</version>
+        <configuration>
+          <targetClasses>
+            <param>com.example.app.service.*</param>
+            <param>com.example.app.security.*</param>
+          </targetClasses>
+          <targetTests>
+            <param>com.example.app.*Test</param>
+          </targetTests>
+          <mutationThreshold>${pit.mutation.threshold}</mutationThreshold>
+          <outputFormats>
+            <outputFormat>HTML</outputFormat>
+            <outputFormat>XML</outputFormat>
+          </outputFormats>
+          <timestampedReports>false</timestampedReports>
+        </configuration>
+        <dependencies>
+          <dependency>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-junit5-plugin</artifactId>
+            <version>${pitest.junit5.version}</version>
+          </dependency>
+        </dependencies>
+      </plugin>
+
+      <!-- FORMATTING GATE: spotless:check fails on unformatted code. -->
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>${spotless.version}</version>
+        <configuration>
+          <java>
+            <googleJavaFormat>
+              <version>1.19.2</version>
+              <style>GOOGLE</style>
+            </googleJavaFormat>
+            <removeUnusedImports/>
+            <trimTrailingWhitespace/>
+            <endWithNewline/>
+          </java>
+        </configuration>
+      </plugin>
+
+      <!-- CHECKSTYLE GATE: any violation fails. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <version>${checkstyle.plugin.version}</version>
+        <configuration>
+          <configLocation>config/checkstyle/checkstyle.xml</configLocation>
+          <consoleOutput>true</consoleOutput>
+          <failOnViolation>true</failOnViolation>
+          <violationSeverity>warning</violationSeverity>
+          <includeTestSourceDirectory>false</includeTestSourceDirectory>
+        </configuration>
+        <dependencies>
+          <dependency>
+            <groupId>com.puppycrawl.tools</groupId>
+            <artifactId>checkstyle</artifactId>
+            <version>${checkstyle.version}</version>
+          </dependency>
+        </dependencies>
+      </plugin>
+
+      <!-- PMD GATE: priority 1-3 violations fail; CPD catches duplication. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-pmd-plugin</artifactId>
+        <version>${pmd.version}</version>
+        <configuration>
+          <rulesets>
+            <ruleset>config/pmd/ruleset.xml</ruleset>
+          </rulesets>
+          <failOnViolation>true</failOnViolation>
+          <failurePriority>3</failurePriority>
+          <printFailingErrors>true</printFailingErrors>
+          <minimumTokens>100</minimumTokens>
+          <includeTests>false</includeTests>
+        </configuration>
+      </plugin>
+
+      <!-- SPOTBUGS GATE: High priority issues fail the build. -->
+      <plugin>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-maven-plugin</artifactId>
+        <version>${spotbugs.version}</version>
+        <configuration>
+          <effort>Max</effort>
+          <threshold>High</threshold>
+          <failOnError>true</failOnError>
+          <xmlOutput>true</xmlOutput>
+          <excludeFilterFile>config/spotbugs/exclude.xml</excludeFilterFile>
+        </configuration>
+      </plugin>
+
+      <!-- OWASP DEPENDENCY CHECK: CVSS >= 7 fails the build. -->
+      <plugin>
+        <groupId>org.owasp</groupId>
+        <artifactId>dependency-check-maven</artifactId>
+        <version>${dependency.check.version}</version>
+        <configuration>
+          <failBuildOnCVSS>${owasp.fail.cvss}</failBuildOnCVSS>
+          <formats>
+            <format>HTML</format>
+            <format>JSON</format>
+          </formats>
+          <nvdApiDelay>4000</nvdApiDelay>
+          <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
+        </configuration>
+      </plugin>
+
+      <!-- SBOM in CycloneDX format (JSON + XML). -->
+      <plugin>
+        <groupId>org.cyclonedx</groupId>
+        <artifactId>cyclonedx-maven-plugin</artifactId>
+        <version>${cyclonedx.version}</version>
+        <configuration>
+          <outputFormat>all</outputFormat>
+          <outputName>bom</outputName>
+          <schemaVersion>1.5</schemaVersion>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.sonarsource.scanner.maven</groupId>
+        <artifactId>sonar-maven-plugin</artifactId>
+        <version>${sonar.version}</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

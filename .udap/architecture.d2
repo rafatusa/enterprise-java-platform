@@ -1,0 +1,27 @@
+# udap:meta cloud=aws region=us-east-1 target=ec2
+
+user: Developer / API Client { udap-type: generic.user }
+ghcr: GHCR Container Registry { udap-type: generic.app }
+cw: CloudWatch Logs { udap-type: aws.cloudwatch }
+iam: IAM Role + Instance Profile { udap-type: aws.iam }
+eip: Elastic IP { udap-type: aws.eip }
+vpc: VPC (default) {
+  sg: Security Group 22/80/443 { udap-type: aws.securitygroup }
+  host: EC2 t3.medium Ubuntu 22.04 { udap-type: aws.ec2 }
+  nginx: Nginx Reverse Proxy :80 { udap-type: generic.app }
+  app: Spring Boot API :8080 (systemd) { udap-type: generic.app }
+  db: PostgreSQL 16 on-host :5432 { udap-type: generic.db }
+}
+
+user -> eip: HTTPS
+eip -> vpc.nginx: 80/443
+vpc.nginx -> vpc.app: proxy_pass 127.0.0.1:8080
+vpc.app -> vpc.db: JDBC localhost:5432
+vpc.host -> vpc.nginx: hosts
+vpc.host -> vpc.app: hosts
+vpc.host -> vpc.db: hosts
+vpc.app -> cw: application logs
+vpc.nginx -> cw: access + error logs
+iam -> vpc.host: instance profile
+ghcr -> vpc.host: image published
+vpc.sg -> vpc.host: ingress rules

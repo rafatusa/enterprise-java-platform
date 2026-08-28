@@ -1,0 +1,176 @@
+---
+# Release deployment with a rollback-capable symlink layout.
+#
+#   /opt/app/releases/<version>/app.jar
+#   /opt/app/current   -> the live release
+#   /opt/app/previous  -> the last known-good release (rollback target)
+
+- name: Check whether this release has already been built
+  ansible.builtin.stat:
+    path: "{{ release_dir }}/app.jar"
+  register: existing_release
+
+- name: Create the release directory
+  ansible.builtin.file:
+    path: "{{ release_dir }}"
+    state: directory
+    owner: appuser
+    group: appuser
+    mode: "0755"
+
+- name: Create the build workspace
+  ansible.builtin.file:
+    path: "{{ app_dir }}/build"
+    state: directory
+    owner: appuser
+    group: appuser
+    mode: "0755"
+  when: not existing_release.stat.exists
+
+# copy (not synchronize): synchronize lives in ansible.posix, which ansible-core
+# does not ship, and additionally requires rsync on both ends. Only src/dest/
+# owner/group/mode are used — copy has no 'exclude' parameter.
+- name: Copy the build manifest
+  ansible.builtin.copy:
+    src: "../pom.xml"
+    dest: "{{ app_dir }}/build/pom.xml"
+    owner: appuser
+    group: appuser
+    mode: "0644"
+  when: not existing_release.stat.exists
+
+- name: Copy the source tree and analyzer configuration
+  ansible.builtin.copy:
+    src: "../{{ item }}"
+    dest: "{{ app_dir }}/build/"
+    owner: appuser
+    group: appuser
+    mode: "0644"
+    directory_mode: "0755"
+  loop:
+    - src
+    - config
+  when: not existing_release.stat.exists
+
+- name: Build the application jar
+  ansible.builtin.command:
+    cmd: mvn --quiet -B -ntp -DskipTests package
+    chdir: "{{ app_dir }}/build"
+    creates: "{{ app_dir }}/build/target/app.jar"
+  become_user: appuser
+  environment:
+    MAVEN_OPTS: "-Xmx1024m"
+  when: not existing_release.stat.exists
+  # `creates` makes the build idempotent: a rerun after a partial failure skips
+  # a build that already produced its artifact instead of repeating ~2 minutes
+  # of Maven work.
+
+- name: Publish the jar into the release directory
+  ansible.builtin.copy:
+    src: "{{ app_dir }}/build/target/app.jar"
+    dest: "{{ release_dir }}/app.jar"
+    remote_src: true
+    owner: appuser
+    group: appuser
+    mode: "0644"
+  when: not existing_release.stat.exists
+
+- name: Read the currently deployed release (if any)
+  ansible.builtin.stat:
+    path: "{{ current_link }}"
+  register: current_release
+
+# Only moves `previous` when the outgoing release differs from the incoming one,
+# so re-deploying the same version cannot make previous == current and silently
+# destroy the rollback target.
+- name: Record the outgoing release as the rollback target
+  ansible.builtin.file:
+    src: "{{ current_release.stat.lnk_source }}"
+    dest: "{{ previous_link }}"
+    state: link
+    owner: appuser
+    group: appuser
+    force: true
+  when:
+    - current_release.stat.exists
+    - current_release.stat.islnk | default(false)
+    - current_release.stat.lnk_source != release_dir
+
+- name: Write the application environment file
+  ansible.builtin.template:
+    src: app.env.j2
+    dest: "{{ app_dir }}/shared/app.env"
+    owner: appuser
+    group: appuser
+    mode: "0640"
+  no_log: true
+  notify: Restart application
+
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: app.service.j2
+    dest: /etc/systemd/system/app.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart application
+
+- name: Point `current` at the new release
+  ansible.builtin.file:
+    src: "{{ release_dir }}"
+    dest: "{{ current_link }}"
+    state: link
+    owner: appuser
+    group: appuser
+    force: true
+  notify: Restart application
+
+- name: Apply pending handlers now so the new release is live
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the application to accept connections
+  ansible.builtin.wait_for:
+    port: "{{ app_port }}"
+    host: 127.0.0.1
+    delay: 5
+    timeout: 180
+
+- name: Verify the application reports healthy
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ app_port }}/actuator/health"
+    status_code: 200
+    return_content: true
+  register: health
+  retries: 12
+  delay: 10
+  until: health.status == 200 and (health.json.status | default('')) == 'UP'
+
+- name: Report the deployed release
+  ansible.builtin.debug:
+    msg: "Release {{ app_version }} is live and healthy."
+
+- name: List releases eligible for pruning
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      ls -1dt {{ releases_dir }}/*/ 2>/dev/null | tail -n +{{ keep_releases + 1 }}
+    executable: /bin/bash
+  register: stale_releases
+  changed_when: false
+  failed_when: false
+
+- name: Prune old releases
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ stale_releases.stdout_lines | default([]) }}"
+  # file/state=absent instead of `rm -rf` in a shell: idempotent by nature,
+  # reports changed only when something was actually removed, and cannot be
+  # turned into an unbounded delete by an empty variable.
+
+- name: Remove the build workspace
+  ansible.builtin.file:
+    path: "{{ app_dir }}/build"
+    state: absent

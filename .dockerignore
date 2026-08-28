@@ -1,0 +1,14 @@
+target/
+reports/
+infra/
+ansible/
+puppet/
+perf/
+docs/
+.git/
+.github/
+.udap/
+*.md
+.gitleaks.toml
+scripts/
+.mvn/

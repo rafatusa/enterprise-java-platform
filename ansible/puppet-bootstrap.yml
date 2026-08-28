@@ -1,0 +1,78 @@
+---
+# Puppet bootstrap: base server configuration.
+#
+# Puppet owns the DURABLE state of the machine — packages, users, directory
+# layout, kernel/SSH hardening, the CloudWatch agent. Ansible (site.yml) owns the
+# per-release APPLICATION deployment. The split is deliberate: Puppet describes
+# what the server IS, Ansible performs what a deploy DOES.
+#
+# Puppet runs masterless (`puppet apply`) — a Puppet server would be a whole
+# extra piece of infrastructure to operate for a single node.
+- name: Bootstrap the server with Puppet
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    puppet_code_dir: /opt/puppet
+
+  tasks:
+    - name: Wait for cloud-init to finish
+      ansible.builtin.wait_for:
+        path: /var/lib/cloud/instance/boot-finished
+        timeout: 300
+      # A fresh instance races cloud-init's own apt operations; starting before
+      # it finishes causes intermittent dpkg lock failures.
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+      register: apt_update
+      until: apt_update is succeeded
+      retries: 5
+      delay: 15
+      # NOTE: no cache_valid_time. Cloud images ship a prebuilt apt index that
+      # looks fresh but names superseded package versions, producing 404s on
+      # install. The host is new on every provision, so the cache saves nothing.
+
+    - name: Install Puppet agent (masterless apply)
+      ansible.builtin.apt:
+        name: puppet-agent
+        state: present
+      register: puppet_install
+      until: puppet_install is succeeded
+      retries: 3
+      delay: 10
+
+    - name: Ensure the Puppet code directory exists
+      ansible.builtin.file:
+        path: "{{ puppet_code_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy Puppet manifests
+      ansible.builtin.copy:
+        src: "../puppet/"
+        dest: "{{ puppet_code_dir }}/"
+        mode: "0644"
+      # ansible.builtin.copy is used rather than synchronize: synchronize lives
+      # in ansible.posix (not shipped with ansible-core) and needs rsync on both
+      # ends. copy has neither dependency.
+
+    - name: Apply the base Puppet manifest
+      ansible.builtin.command:
+        cmd: >-
+          /opt/puppetlabs/bin/puppet apply
+          --modulepath={{ puppet_code_dir }}/modules
+          --detailed-exitcodes
+          {{ puppet_code_dir }}/manifests/site.pp
+      register: puppet_apply
+      # puppet --detailed-exitcodes: 0 = no changes, 2 = changes applied
+      # successfully. 4 and 6 mean failures. Treating 2 as failure would make
+      # every real convergence look broken.
+      changed_when: puppet_apply.rc == 2
+      failed_when: puppet_apply.rc not in [0, 2]
+
+    - name: Show Puppet output
+      ansible.builtin.debug:
+        var: puppet_apply.stdout_lines

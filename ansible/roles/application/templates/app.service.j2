@@ -1,0 +1,43 @@
+[Unit]
+Description=Enterprise Java Platform application
+Documentation=https://github.com/{{ github_repository | default('your-org/enterprise-java-platform') }}
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=appuser
+Group=appuser
+WorkingDirectory={{ current_link }}
+
+EnvironmentFile={{ app_dir }}/shared/app.env
+
+# ExecStart uses the absolute path to the JRE and to the symlinked release, so a
+# rollback is a symlink swap plus a restart — no rebuild, no path rewriting.
+ExecStart=/usr/bin/java \
+  -XX:MaxRAMPercentage=70.0 \
+  -XX:+UseG1GC \
+  -Djava.security.egd=file:/dev/./urandom \
+  -jar {{ current_link }}/app.jar
+
+SuccessExitStatus=143
+Restart=always
+RestartSec=10
+
+# Graceful shutdown: Spring Boot drains in-flight requests within 25s.
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+StandardOutput=append:{{ app_dir }}/logs/application.log
+StandardError=append:{{ app_dir }}/logs/application.log
+
+# --- Hardening ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths={{ app_dir }}/logs {{ app_dir }}/shared
+
+[Install]
+WantedBy=multi-user.target

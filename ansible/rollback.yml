@@ -1,0 +1,81 @@
+---
+# Rollback: restore the previous release.
+#
+# Invoked by scripts/ci/verify-with-rollback.sh when deployment validation fails,
+# and runnable by hand for a manual rollback:
+#
+#   ansible-playbook -i "<host>," -u ubuntu --private-key <key> ansible/rollback.yml
+#
+# The release layout makes this a symlink swap plus a restart — no rebuild, and
+# no dependency on CI being available.
+- name: Roll back to the previous release
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    app_dir: /opt/app
+    current_link: /opt/app/current
+    previous_link: /opt/app/previous
+    app_port: 8080
+
+  tasks:
+    - name: Check that a rollback target exists
+      ansible.builtin.stat:
+        path: "{{ previous_link }}"
+      register: previous
+
+    - name: Fail clearly when there is nothing to roll back to
+      ansible.builtin.fail:
+        msg: >-
+          No previous release found at {{ previous_link }}. This is the first
+          deployment, so there is no earlier version to restore. Fix the failure
+          and deploy forward instead.
+      when: not previous.stat.exists
+
+    - name: Resolve the previous release path
+      ansible.builtin.stat:
+        path: "{{ previous_link }}"
+        follow: false
+      register: previous_link_info
+
+    - name: Show what is being restored
+      ansible.builtin.debug:
+        msg: "Rolling back to {{ previous_link_info.stat.lnk_source }}"
+
+    - name: Point `current` back at the previous release
+      ansible.builtin.file:
+        src: "{{ previous_link_info.stat.lnk_source }}"
+        dest: "{{ current_link }}"
+        state: link
+        owner: appuser
+        group: appuser
+        force: true
+
+    - name: Restart the application on the restored release
+      ansible.builtin.systemd:
+        name: app
+        state: restarted
+        enabled: true
+        daemon_reload: true
+
+    - name: Wait for the restored release to accept connections
+      ansible.builtin.wait_for:
+        port: "{{ app_port }}"
+        host: 127.0.0.1
+        delay: 5
+        timeout: 180
+
+    - name: Verify the restored release reports healthy
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_port }}/actuator/health"
+        status_code: 200
+        return_content: true
+      register: health
+      retries: 12
+      delay: 10
+      until: health.status == 200 and (health.json.status | default('')) == 'UP'
+
+    - name: Confirm the rollback
+      ansible.builtin.debug:
+        msg: "Rollback complete — the previous release is live and healthy."

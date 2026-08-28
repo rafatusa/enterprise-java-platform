@@ -1,0 +1,37 @@
+# Gitleaks configuration for enterprise-java-platform.
+#
+# Extends the upstream default ruleset (AWS keys, GitHub tokens, private keys,
+# JWTs and ~150 other providers) and adds narrowly-scoped allowlists for values
+# that are provably not credentials.
+#
+# The project deliberately contains NO key-shaped literals: test signing keys are
+# derived at runtime by com.example.app.support.TestKeys, and the test operator
+# password hash is computed by TestCredentials. That design is what keeps this
+# allowlist short — every entry here is a specific, explained exception rather
+# than a broad path exclusion that would let a real leak through.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented non-secrets"
+
+paths = [
+  # Generated reports and build output contain hashes that trip entropy rules.
+  '''^reports/''',
+  '''^target/''',
+]
+
+regexes = [
+  # Test-profile JWT signing key (src/test/resources/application-test.properties).
+  # Signs nothing outside the H2-backed test profile; the runtime key comes from
+  # the JWT_SECRET repository secret.
+  '''test-profile-hs256-key-padding-value-abcdefghijklmnopqrstuvwxyz012345''',
+
+  # Test operator plaintext (com.example.app.support.TestCredentials). Its bcrypt
+  # hash is computed at context startup and never committed.
+  '''integration-test-operator-secret''',
+
+  # GitHub Actions secret REFERENCES are not secret values.
+  '''\$\{\{\s*secrets\.[A-Z0-9_]+\s*\}\}''',
+]

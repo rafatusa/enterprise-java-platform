@@ -1,0 +1,43 @@
+---
+# Nginx reverse proxy: the ONLY public entry point.
+# The application binds 127.0.0.1:8080, so everything reaches it through here.
+
+- name: Install the application vhost
+  ansible.builtin.template:
+    src: app.conf.j2
+    dest: /etc/nginx/sites-available/app.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable the application vhost
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/app.conf
+    dest: /etc/nginx/sites-enabled/app.conf
+    state: link
+    force: true
+  notify: Reload nginx
+
+- name: Remove the default vhost so it cannot shadow the app on IP access
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Validate the nginx configuration
+  ansible.builtin.command:
+    cmd: nginx -t
+  register: nginx_test
+  changed_when: false
+  # Fail here rather than in the handler: a bad config caught before reload
+  # leaves the previous, working nginx running.
+
+- name: Ensure nginx is running and enabled
+  ansible.builtin.systemd:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Apply the nginx configuration now
+  ansible.builtin.meta: flush_handlers

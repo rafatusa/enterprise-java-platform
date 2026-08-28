@@ -1,0 +1,63 @@
+{
+  "consumer": {
+    "name": "web-console"
+  },
+  "provider": {
+    "name": "enterprise-java-platform"
+  },
+  "interactions": [
+    {
+      "description": "a request for service health",
+      "providerStates": [
+        {
+          "name": "the service is healthy"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/actuator/health"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/vnd.spring-boot.actuator.v3+json"
+        },
+        "body": {
+          "status": "UP"
+        },
+        "matchingRules": {
+          "body": {
+            "$.status": {
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ],
+              "combine": "AND"
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "an unauthenticated request for tasks",
+      "providerStates": [
+        {
+          "name": "the service is healthy"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/tasks"
+      },
+      "response": {
+        "status": 401
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  }
+}

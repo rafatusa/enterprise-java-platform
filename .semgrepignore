@@ -1,0 +1,24 @@
+# Paths excluded from SAST.
+#
+# Rationale: Semgrep must only report on code this repository OWNS and can fix.
+# Findings in build output or in downloaded dependencies are not actionable here
+# and train reviewers to ignore the gate — which is worse than not running it.
+#
+# This file deliberately does NOT exclude any first-party source or test code.
+
+# Maven build output: compiled classes, unpacked dependencies, generated sources.
+target/
+
+# Scanner output. Reports contain the very patterns the scanners look for
+# (e.g. a SARIF snippet quoting a flagged line), so scanning them is circular.
+reports/
+
+# Dependency lock/metadata caches.
+.m2/
+**/node_modules/
+
+# Version control and CI internals.
+.git/
+
+# Documentation assets (SVG diagrams, rendered screenshots).
+.udap/docs/
