@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OWASP Dependency Check suppressions.
+
+  RULES FOR THIS FILE — read before adding an entry:
+
+  1. A suppression is a statement that a REPORTED vulnerability does not apply
+     to this project. It is not a way to make a red build green. If the CVE
+     applies, upgrade the dependency instead.
+
+  2. Every entry MUST carry:
+       - the CVE id,
+       - a <notes> explaining WHY it does not apply here (which code path is
+         absent, which feature is not enabled),
+       - an expiry date in the notes, no more than 90 days out.
+
+  3. An undated suppression is a permanently disabled gate. Re-review on expiry;
+     if the CVE still has no fix, re-date it deliberately rather than leaving it
+     open forever.
+
+  4. NEVER raise failBuildOnCVSS in pom.xml to clear a finding. That disables
+     the gate for every dependency, forever, invisibly. This file at least makes
+     each exemption reviewable in a diff.
+
+  Currently empty: no exemptions are in force. Remediation so far has been by
+  upgrading spring-boot-starter-parent, which is always the preferred fix
+  because it moves the whole managed dependency set at once.
+-->
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+</suppressions>

@@ -4,10 +4,14 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
+  <!-- The parent manages versions for the whole Spring dependency set, so
+       bumping it is the single most effective remediation when the OWASP gate
+       reports CVEs in transitive dependencies. Prefer raising this over adding
+       suppressions. -->
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.3.5</version>
+    <version>3.3.13</version>
     <relativePath/>
   </parent>
 
@@ -354,7 +358,12 @@
         </configuration>
       </plugin>
 
-      <!-- OWASP DEPENDENCY CHECK: CVSS >= 7 fails the build. -->
+      <!-- OWASP DEPENDENCY CHECK: CVSS >= 7 fails the build.
+
+           suppressions.xml holds ONLY documented, time-boxed entries. Every
+           suppression must name the CVE, say why it does not apply here, and
+           carry an expiry date — an undated suppression is a permanently
+           disabled gate. Never raise failBuildOnCVSS to clear a finding. -->
       <plugin>
         <groupId>org.owasp</groupId>
         <artifactId>dependency-check-maven</artifactId>
@@ -367,6 +376,9 @@
           </formats>
           <nvdApiDelay>4000</nvdApiDelay>
           <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
+          <suppressionFiles>
+            <suppressionFile>config/owasp/suppressions.xml</suppressionFile>
+          </suppressionFiles>
         </configuration>
       </plugin>
 
