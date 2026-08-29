@@ -133,15 +133,19 @@ next to the report so this distinction survives into the artifact.
 One or more dependencies were identified with vulnerabilities that have a CVSS score greater than or equal to '7.0'
 ```
 
-The **gate step** prints everything you need: for OWASP, each CVSS ≥ 7 finding
-with its CVE id, the jar, and the **matched CPE range**; for Trivy, each
-CRITICAL/HIGH with the package, installed version and **fixed version**. Read
-the range before doing anything — it tells you immediately whether the shipped
-version is genuinely inside it.
+The **gate step** prints everything you need: for Trivy, each CRITICAL/HIGH with
+the package, installed version and **fixed version**; for OWASP, each CVSS ≥ 7
+finding with its CVE id, the jar, and the **matched CPE range**. Read the range
+before doing anything — it tells you immediately whether the shipped version is
+genuinely inside it.
 
 > Findings are printed by the **gate** step, not the scan step. The scan step
 > always exits 0 (report-then-gate), so `gh run view --log-failed` only ever
 > shows the gate. Anything a human needs in order to diagnose belongs there.
+>
+> **Trivy prints before OWASP on purpose.** Log retrieval truncates the tail of
+> long output, and the short Trivy block sat invisible behind a long OWASP list
+> for four consecutive runs. Put the scarcest information first.
 
 **Fix:** upgrade the dependency. Spring Boot's parent POM manages most versions,
 so bumping `spring-boot-starter-parent` often clears several at once.
@@ -164,6 +168,13 @@ group for exactly this reason. Tomcat's embed distribution ships as *both*
 `tomcat-embed-core` and `tomcat-embed-websocket`, and the same CVE is reported
 against both; a suppression scoped to one leaves the other red.
 
+**A CPE match at the *product* level does not mean the vulnerable *module* is
+present.** `log4j-api` is a facade jar of interfaces; the layout flaws reported
+against it (`XmlLayout`, `Rfc5424Layout`, `JsonTemplateLayout`) all live in
+`log4j-core`, which this project does not ship. Likewise `angus-activation` is
+the MIME activation framework, not Jakarta Mail. Verify which classes are
+actually on the classpath before deciding — and write down what you checked.
+
 Do not lower `failBuildOnCVSS`; that silently disables the gate for every
 dependency, forever.
 
@@ -181,10 +192,19 @@ new CVEs continuously. This is the gate working.
 > standalone CLI's convention and is silently ignored by the plugin. It is
 > passed as `-Dnvd.api.key` in `scripts/ci/dependency-scan.sh`.
 
+#### Worked example — when to upgrade instead of suppress
+
+`CVE-2026-65898` (CVSS 7.2) reported DOMPurify < 3.4.11 inside the `swagger-ui`
+bundle shipped by springdoc 2.8.6. It is **not** in the suppressions file,
+because Swagger UI is served to real browsers at `/swagger-ui.html` — the
+vulnerable code is genuinely reachable. It was fixed by raising
+`springdoc.version` to **2.8.17**. Reachable component + published fix = upgrade,
+every time.
+
 #### OPEN SECURITY ITEM — accepted risk, review by 2026-11-27
 
-`config/owasp/suppressions.xml` currently carries **seven suppressions that are
-not dismissals**. They are accepted risk with no available fix:
+`config/owasp/suppressions.xml` currently carries **nine suppressions that are
+not dismissals** (category B). They are accepted risk with no available fix:
 
 | CVE | CVSS | Issue | Fixed in |
 |-----|------|-------|----------|
@@ -195,8 +215,10 @@ not dismissals**. They are accepted risk with no available fix:
 | CVE-2026-68569 | 8.1 | Improper authentication | 10.1.58 |
 | CVE-2026-66422 | 8.1 | `security-role-ref` used as Realm role alias | 10.1.58 |
 | CVE-2026-65183 | 8.1 | TOCTOU race creating unix domain sockets | 10.1.58 |
+| CVE-2026-68763 | 7.5 | HTTP/2 allocation leak on stream reset | 10.1.58 |
+| CVE-2026-65927 | 7.5 | Rewrite valve `[N]` flag off-by-one | 10.1.58 |
 
-All seven genuinely apply to the embedded Tomcat this service runs on, and all
+All nine genuinely apply to the embedded Tomcat this service runs on, and all
 are reported against **both** `tomcat-embed-core-10.1.57.jar` and
 `tomcat-embed-websocket-10.1.57.jar`. They are suppressed **only** because
 `10.1.58` is tagged in the Apache git repository but **has not been published to
@@ -217,13 +239,18 @@ exists.
 - CVE-2026-65183 needs a **unix domain socket connector** and a local
   unprivileged user. The connector is TCP on `127.0.0.1:8080`, no unix socket is
   configured, and the box has no interactive users beyond the deploy account.
+- CVE-2026-68763 needs **HTTP/2**. The connector is HTTP/1.1 only — no
+  `Http2Protocol` upgrade protocol is configured, and nginx proxies over
+  HTTP/1.1 — so no HTTP/2 stream can be opened against Tomcat.
+- CVE-2026-65927 needs the **Tomcat rewrite valve**. No `rewrite.config` exists
+  and no `RewriteValve` is declared; rewriting happens in nginx.
 - Tomcat is not internet-facing: nginx terminates and proxies, and the security
   group exposes only 80/443.
 
 **Action:** check
 <https://repo1.maven.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/>
 for `10.1.58` or later. The moment it is published, raise `<tomcat.version>` in
-`pom.xml` and **delete all seven entries**. Do not re-date them without
+`pom.xml` and **delete all nine entries**. Do not re-date them without
 re-checking Central.
 
 ### `package` — container scan failed

@@ -37,27 +37,37 @@
 
          KNOWN OPEN ISSUE — do not "clean this up" without reading this note.
          With an authenticated NVD feed the dependency gate printed the matched
-         CPE ranges. They are REAL matches, not CPE artifacts:
+         CPE ranges. They are REAL matches, not CPE artifacts. NINE CVEs match
+         the 10.1.x line below 10.1.58:
            CVE-2026-65905 (9.8 DIGEST auth bypass)  >=10.1.0  <10.1.58
            CVE-2026-65637 (9.8 improper input val.) >=10.1.53 <10.1.58
            CVE-2026-68525 (9.1 FORM authz bypass)   >=10.1.0  <10.1.58
            CVE-2026-65182 (9.1 constraint bypass)   >=10.1.0  <10.1.58
-           CVE-2026-59084 / 59083 / 55276 / 53434   <=10.1.56 / <10.1.56
+           CVE-2026-68569 (8.1 improper authn)      >=10.1.0  <10.1.58
+           CVE-2026-66422 (8.1 role-ref as alias)   >=10.1.0  <10.1.58
+           CVE-2026-65183 (8.1 TOCTOU unix socket)  >=10.1.0  <10.1.58
+           CVE-2026-68763 (7.5 HTTP/2 alloc leak)   >=10.1.0  <10.1.58
+           CVE-2026-65927 (7.5 rewrite off-by-one)  >=10.1.0  <10.1.58
 
          10.1.57 is set here because it is the highest version PUBLISHED TO
-         MAVEN CENTRAL, and it genuinely CLEARS the second group (the
-         <=10.1.56 / <10.1.56 CVEs). Those are FIXED by upgrade, not suppressed.
+         MAVEN CENTRAL, and it genuinely CLEARED an earlier group
+         (CVE-2026-59084 / 59083 / 55276 / 53434, ranges <=10.1.56 / <10.1.56).
+         Those are FIXED by upgrade, not suppressed, and no longer appear.
 
-         The four <10.1.58 CVEs need 10.1.58, which is TAGGED IN GIT BUT NOT
-         PUBLISHED TO MAVEN CENTRAL — setting it fails the build with
-         "Could not find artifact org.apache.tomcat.embed:tomcat-embed-core:
-         jar:10.1.58 in central". A git tag is cut before the artifacts are
-         staged and released; always verify the registry the BUILD resolves
-         from, not the source repo. Those four carry time-boxed suppressions in
-         config/owasp/suppressions.xml on "no fixed release published" grounds.
+         The nine above need 10.1.58, which is TAGGED IN GIT BUT NOT PUBLISHED
+         TO MAVEN CENTRAL — setting it fails the build with "Could not find
+         artifact org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.58 in
+         central". A git tag is cut before the artifacts are staged and
+         released; always verify the registry the BUILD resolves from, not the
+         source repo. All nine carry time-boxed suppressions in
+         config/owasp/suppressions.xml on "no fixed release published" grounds,
+         each with its own compensating control.
+
+         NOTE the trap: raising 10.1.55 -> 10.1.57 fixed four CVEs AND brought
+         three new ones into range. Re-read the scan after EVERY bump.
 
          ACTION WHEN 10.1.58 (or later) LANDS ON CENTRAL: raise this property
-         and DELETE the four Tomcat entries from suppressions.xml.
+         and DELETE all nine Tomcat entries from suppressions.xml.
 
          This is a FLOOR, not a pin to hold the parent back: if a future parent
          manages a NEWER Tomcat, raise or remove this property rather than
@@ -93,7 +103,22 @@
     <sonar.version>4.0.0.4121</sonar.version>
     <rest.assured.version>5.5.0</rest.assured.version>
     <pact.version>4.6.14</pact.version>
-    <springdoc.version>2.8.6</springdoc.version>
+
+    <!-- springdoc bundles swagger-ui, which in turn bundles DOMPurify. The
+         dependency gate reported CVE-2026-65898 (CVSS 7.2, DOMPurify < 3.4.11
+         fails to clone the ALLOWED_ATTR allowlist) against
+         swagger-ui-5.20.1.jar as shipped by springdoc 2.8.6.
+
+         Unlike the Tomcat findings this is a REAL, REACHABLE component: Swagger
+         UI is served to browsers at /swagger-ui.html, so a sanitiser bypass is
+         genuinely exposed. It is therefore fixed by UPGRADE, not suppressed.
+         2.8.17 is the newest release of the 2.8.x line (same Spring Boot 3.x
+         compatibility as 2.8.6, so a low-risk patch-level move) and carries a
+         newer swagger-ui bundle.
+
+         If a future scan still reports a DOMPurify CVE here, the remedy is a
+         newer springdoc — never a suppression: this component is reachable. -->
+    <springdoc.version>2.8.17</springdoc.version>
     <jjwt.version>0.12.6</jjwt.version>
 
     <!-- Sonar reads the aggregated JaCoCo XML so unit + IT both count. -->

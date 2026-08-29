@@ -7,7 +7,9 @@
   1. A suppression is a statement that a REPORTED vulnerability does not apply
      to this project, OR that it applies but has no published fix yet. It is
      not a way to make a red build green. If a fixed release EXISTS, upgrade
-     the dependency instead — always.
+     the dependency instead — always. (Worked example: CVE-2026-65898, the
+     DOMPurify flaw in swagger-ui, is NOT in this file. Swagger UI is served to
+     real browsers, so it was fixed by raising springdoc 2.8.6 -> 2.8.17.)
 
   2. Every entry MUST carry:
        - the CVE id,
@@ -41,6 +43,12 @@
      against, precisely so this can be got right in one pass. Scope to the
      narrowest pattern that covers all of them, never to a whole group "just in
      case".
+
+  7. "COMPONENT ABSENT" MEANS THE VULNERABLE CLASSES ARE NOT ON THE CLASSPATH —
+     verify it, do not assume it from the artifact name. A CPE match at the
+     PRODUCT level ("apache log4j") does not mean the vulnerable MODULE is
+     present: log4j-api is a facade jar; the flaws below live in log4j-core.
+     Each category-A entry states what was checked and how.
 
   TWO CATEGORIES OF ENTRY EXIST HERE — they are not equivalent:
     (A) VULNERABLE COMPONENT ABSENT — the affected module is not on the
@@ -104,16 +112,121 @@
     <cve>CVE-2026-41855</cve>
   </suppress>
 
+  <!--
+    CVE-2026-34481 / 34480 / 34479 / 34478 — four Apache Log4j layout flaws,
+    all CVSS 7.5, all reported against log4j-api-2.24.3.jar:
+      34481  JsonTemplateLayout produces invalid JSON
+      34480  XmlLayout fails to sanitise characters forbidden by XML 1.0
+      34479  Log4j1XmlLayout (log4j-1.2 bridge) fails to escape XML characters
+      34478  Rfc5424Layout injection
+
+    NOT APPLICABLE — the vulnerable MODULE is absent. Every one of these flaws
+    lives in log4j-CORE (or the log4j-1.2 bridge); log4j-api is the facade jar
+    containing only interfaces, and it carries NONE of the named layout classes.
+    The findings appear because the CPE match is at the "apache log4j" PRODUCT
+    level, which does not distinguish api from core.
+
+    VERIFIED, not assumed:
+      - This application logs through LOGBACK, which is what
+        spring-boot-starter-logging pulls in by default. log4j-core is not a
+        dependency, direct or transitive.
+      - There is no log4j2.xml, log4j2.properties or log4j.properties anywhere
+        in the source tree.
+      - src/main/resources/application.properties configures logging via
+        logging.pattern.console — a Logback property. No layout from the
+        advisories is configured, and none is on the classpath to configure.
+
+    Re-review by: 2026-11-27 (90 days). If log4j-core is ever introduced (for
+    example by excluding spring-boot-starter-logging in favour of
+    spring-boot-starter-log4j2), these four entries MUST be removed and the
+    findings re-assessed before that change ships.
+  -->
+  <suppress>
+    <notes><![CDATA[
+      CATEGORY A (component absent). CVE-2026-34481 is a JsonTemplateLayout flaw
+      in log4j-CORE. This build has log4j-api only (facade jar, interfaces
+      only); logging is Logback via spring-boot-starter-logging. No log4j-core
+      on the classpath, no log4j2 config file, no JsonTemplateLayout.
+      Re-review by 2026-11-27.
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.logging\.log4j/log4j\-api@.*$</packageUrl>
+    <cve>CVE-2026-34481</cve>
+  </suppress>
+
+  <suppress>
+    <notes><![CDATA[
+      CATEGORY A (component absent). CVE-2026-34480 is an XmlLayout
+      sanitisation flaw in log4j-CORE. This build has log4j-api only (facade
+      jar); logging is Logback. No log4j-core on the classpath, no log4j2 config
+      file, no XmlLayout. Re-review by 2026-11-27.
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.logging\.log4j/log4j\-api@.*$</packageUrl>
+    <cve>CVE-2026-34480</cve>
+  </suppress>
+
+  <suppress>
+    <notes><![CDATA[
+      CATEGORY A (component absent). CVE-2026-34479 is a Log4j1XmlLayout flaw in
+      the log4j-1.2-api BRIDGE module, which this build does not include at all.
+      log4j-api (the 2.x facade) is the only log4j artifact present; logging is
+      Logback. Re-review by 2026-11-27.
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.logging\.log4j/log4j\-api@.*$</packageUrl>
+    <cve>CVE-2026-34479</cve>
+  </suppress>
+
+  <suppress>
+    <notes><![CDATA[
+      CATEGORY A (component absent). CVE-2026-34478 is an Rfc5424Layout
+      injection flaw in log4j-CORE. This build has log4j-api only (facade jar);
+      logging is Logback. No log4j-core on the classpath, no log4j2 config file,
+      no Rfc5424Layout/syslog appender. Re-review by 2026-11-27.
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.logging\.log4j/log4j\-api@.*$</packageUrl>
+    <cve>CVE-2026-34478</cve>
+  </suppress>
+
+  <!--
+    CVE-2025-7962 — SMTP injection in Jakarta Mail: \r and \n characters can be
+    used to separate messages. Reported against angus-activation-2.0.3.jar.
+
+    NOT APPLICABLE — the vulnerable component is absent. angus-activation is the
+    Jakarta ACTIVATION framework implementation (MIME type handling), pulled in
+    transitively; it is not Jakarta Mail. The advisory's CPE matches
+    eclipse:angus_mail and eclipse:jakarta_mail — neither artifact is in this
+    build.
+
+    VERIFIED, not assumed: there is no spring-boot-starter-mail, no
+    jakarta.mail-api, no angus-mail, no JavaMailSender bean, and no code in this
+    project sends email of any kind. The service is a REST API with PostgreSQL
+    persistence; there is no SMTP client, so there is no message for an injected
+    \r\n to split.
+
+    Re-review by: 2026-11-27 (90 days). If email is ever added, remove this
+    entry FIRST and re-assess before wiring an SMTP host.
+  -->
+  <suppress>
+    <notes><![CDATA[
+      CATEGORY A (component absent). CVE-2025-7962 is a Jakarta Mail SMTP
+      injection flaw. angus-activation is the ACTIVATION framework (MIME types),
+      not Mail. No spring-boot-starter-mail, no jakarta.mail-api, no angus-mail,
+      no JavaMailSender, no SMTP code anywhere in this project.
+      Re-review by 2026-11-27.
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.eclipse\.angus/angus\-activation@.*$</packageUrl>
+    <cve>CVE-2025-7962</cve>
+  </suppress>
+
   <!-- ==================================================================== -->
   <!-- CATEGORY B — ACCEPTED RISK: NO FIXED RELEASE PUBLISHED YET           -->
   <!--                                                                      -->
-  <!-- These SEVEN CVEs GENUINELY APPLY to the embedded Tomcat this service  -->
+  <!-- These NINE CVEs GENUINELY APPLY to the embedded Tomcat this service  -->
   <!-- runs on. They are suppressed ONLY because no fixed artifact is       -->
   <!-- available to upgrade to, not because they are harmless.              -->
   <!--                                                                      -->
   <!-- EVIDENCE (printed by the dependency gate against an authenticated    -->
-  <!-- NVD feed — correctly-matched ranges, not CPE artifacts). Every one   -->
-  <!-- of these is reported against BOTH tomcat-embed-core-10.1.57.jar AND  -->
+  <!-- NVD feed — correctly-matched ranges, not CPE artifacts). Reported    -->
+  <!-- against BOTH tomcat-embed-core-10.1.57.jar AND                       -->
   <!-- tomcat-embed-websocket-10.1.57.jar, hence the group-wide packageUrl: -->
   <!--   CVE-2026-65905 (9.8) >=10.1.0  <10.1.58  DIGEST auth bypass        -->
   <!--   CVE-2026-65637 (9.8) >=10.1.53 <10.1.58  improper input handling   -->
@@ -125,6 +238,10 @@
   <!--                                            role alias in the Realm   -->
   <!--   CVE-2026-65183 (8.1) >=10.1.0  <10.1.58  TOCTOU race creating unix -->
   <!--                                            domain sockets            -->
+  <!--   CVE-2026-68763 (7.5) >=10.1.0  <10.1.58  HTTP/2 allocation leak in -->
+  <!--                                            backlog tracking on reset -->
+  <!--   CVE-2026-65927 (7.5) >=10.1.0  <10.1.58  off-by-one on the [N] flag-->
+  <!--                                            of the rewrite valve      -->
   <!--                                                                      -->
   <!-- WHY NOT FIXED: every one needs tomcat-embed 10.1.58. 10.1.58 IS      -->
   <!-- TAGGED IN THE APACHE GIT REPO BUT HAS NOT BEEN PUBLISHED TO MAVEN    -->
@@ -138,9 +255,9 @@
   <!-- CVE-2026-59084, CVE-2026-59083, CVE-2026-55276 and CVE-2026-53434    -->
   <!-- (ranges <=10.1.56 / <10.1.56). Those are FIXED, not suppressed, and  -->
   <!-- no entry for them exists in this file — they no longer appear in the -->
-  <!-- scan at all. Note the bump also brought three NEW CVEs into range    -->
-  <!-- (68569 / 66422 / 65183): re-read the scan after EVERY version bump   -->
-  <!-- rather than assuming the suppression set is stable.                  -->
+  <!-- scan at all. Note the bump also brought NEW CVEs into range:         -->
+  <!-- re-read the scan after EVERY version bump rather than assuming the   -->
+  <!-- suppression set is stable.                                           -->
   <!--                                                                      -->
   <!-- COMPENSATING CONTROLS while this risk is accepted:                   -->
   <!--   - The app uses NO Tomcat DIGEST or FORM authentication and         -->
@@ -154,6 +271,12 @@
   <!--     local unprivileged user on the box. The connector is TCP on      -->
   <!--     127.0.0.1:8080; no unix socket is configured, and the instance   -->
   <!--     has no interactive users beyond the deploy account.              -->
+  <!--   - CVE-2026-68763 requires HTTP/2. The connector is HTTP/1.1 only   -->
+  <!--     (no Http2Protocol upgrade protocol is configured), and nginx     -->
+  <!--     proxies to it over HTTP/1.1.                                     -->
+  <!--   - CVE-2026-65927 requires the Tomcat rewrite valve. No             -->
+  <!--     rewrite.config exists and no RewriteValve is declared; URL       -->
+  <!--     rewriting, where needed, happens in nginx.                       -->
   <!--   - Tomcat is not internet-facing: nginx terminates and proxies, and -->
   <!--     the security group exposes only 80/443.                          -->
   <!--   These reduce, but do not eliminate, exposure. This remains an OPEN -->
@@ -162,7 +285,7 @@
   <!-- MANDATORY ACTION ON EXPIRY (2026-11-27) OR SOONER:                   -->
   <!--   Check https://repo1.maven.org/maven2/org/apache/tomcat/embed/      -->
   <!--   tomcat-embed-core/ for 10.1.58+. The moment it is there, raise     -->
-  <!--   <tomcat.version> in pom.xml and DELETE ALL SEVEN entries below.    -->
+  <!--   <tomcat.version> in pom.xml and DELETE ALL NINE entries below.     -->
   <!--   Do not simply re-date them without re-checking Central.            -->
   <!-- ==================================================================== -->
 
@@ -270,6 +393,38 @@
     ]]></notes>
     <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
     <cve>CVE-2026-65183</cve>
+  </suppress>
+
+  <suppress>
+    <notes><![CDATA[
+      CATEGORY B (ACCEPTED RISK — no published fix). CVE-2026-68763, CVSS 7.5,
+      uncontrolled resource consumption via an allocation leak in HTTP/2 backlog
+      tracking when a stream is reset. Range >=10.1.0 <10.1.58. Fixed release
+      10.1.58 is not yet on Maven Central, so no upgrade exists. Compensating
+      control: HTTP/2 IS NOT ENABLED — the embedded connector runs HTTP/1.1 with
+      no Http2Protocol upgrade protocol configured, and nginx proxies to it over
+      HTTP/1.1, so no HTTP/2 stream can be opened against Tomcat at all.
+      Re-review by 2026-11-27 — upgrade to 10.1.58+ and DELETE this entry as
+      soon as the artifact is published.
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
+    <cve>CVE-2026-68763</cve>
+  </suppress>
+
+  <suppress>
+    <notes><![CDATA[
+      CATEGORY B (ACCEPTED RISK — no published fix). CVE-2026-65927, CVSS 7.5,
+      off-by-one error affecting the [N] flag on the rewrite valve, causing
+      rewrite processing to restart at the second rule. Range >=10.1.0 <10.1.58.
+      Fixed release 10.1.58 is not yet on Maven Central, so no upgrade exists.
+      Compensating control: THE REWRITE VALVE IS NOT USED — no rewrite.config
+      exists in this project and no RewriteValve is declared; URL rewriting,
+      where required, is done by nginx in front of Tomcat. Re-review by
+      2026-11-27 — upgrade to 10.1.58+ and DELETE this entry as soon as the
+      artifact is published.
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
+    <cve>CVE-2026-65927</cve>
   </suppress>
 
 </suppressions>
