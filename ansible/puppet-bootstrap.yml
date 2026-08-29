@@ -15,6 +15,10 @@
 
   vars:
     puppet_code_dir: /opt/puppet
+    # Puppet 7 is the release series packaged for Ubuntu 22.04 (jammy) in
+    # Puppet's own apt repository. The release-package name encodes both.
+    puppet_release_deb: "https://apt.puppet.com/puppet7-release-jammy.deb"
+    puppet_bin: /opt/puppetlabs/bin/puppet
 
   tasks:
     - name: Wait for cloud-init to finish
@@ -35,6 +39,53 @@
       # looks fresh but names superseded package versions, producing 404s on
       # install. The host is new on every provision, so the cache saves nothing.
 
+    # -----------------------------------------------------------------------
+    # PUPPET'S APT REPOSITORY MUST BE ADDED BEFORE puppet-agent CAN INSTALL.
+    #
+    # puppet-agent is NOT in Ubuntu 22.04's base repositories. Ubuntu ships an
+    # old, differently-named `puppet` package in universe; the modern agent —
+    # the one that installs to /opt/puppetlabs/bin/puppet, which the apply task
+    # below invokes — comes only from apt.puppet.com. Without the repo the
+    # install fails with:
+    #     No package matching 'puppet-agent' is available
+    #
+    # Puppet distributes a small "release package" that drops in both the
+    # signing key and the sources.list entry, which is more robust than
+    # hand-rolling either: no key fingerprint to hardcode and no deprecated
+    # apt-key usage.
+    # -----------------------------------------------------------------------
+    - name: Check whether the Puppet repository is already configured
+      ansible.builtin.stat:
+        path: /etc/apt/sources.list.d/puppet7-release.list
+      register: puppet_repo
+
+    - name: Download the Puppet release package
+      ansible.builtin.get_url:
+        url: "{{ puppet_release_deb }}"
+        dest: /tmp/puppet-release.deb
+        mode: "0644"
+        timeout: 60
+      register: puppet_release_download
+      until: puppet_release_download is succeeded
+      retries: 3
+      delay: 10
+      when: not puppet_repo.stat.exists
+
+    - name: Install the Puppet release package (adds the repo and signing key)
+      ansible.builtin.apt:
+        deb: /tmp/puppet-release.deb
+        state: present
+      when: not puppet_repo.stat.exists
+
+    - name: Refresh apt after adding the Puppet repository
+      ansible.builtin.apt:
+        update_cache: true
+      register: puppet_apt_update
+      until: puppet_apt_update is succeeded
+      retries: 5
+      delay: 15
+      when: not puppet_repo.stat.exists
+
     - name: Install Puppet agent (masterless apply)
       ansible.builtin.apt:
         name: puppet-agent
@@ -43,6 +94,21 @@
       until: puppet_install is succeeded
       retries: 3
       delay: 10
+
+    # Fail here, with a clear message, rather than letting the apply task die
+    # with a bare "command not found" several tasks later.
+    - name: Verify the Puppet binary is present
+      ansible.builtin.stat:
+        path: "{{ puppet_bin }}"
+      register: puppet_binary
+
+    - name: Fail early if Puppet did not install where expected
+      ansible.builtin.fail:
+        msg: >-
+          puppet-agent installed but {{ puppet_bin }} does not exist.
+          The apt repository at apt.puppet.com may have changed its layout,
+          or a distribution-provided `puppet` package was installed instead.
+      when: not puppet_binary.stat.exists
 
     - name: Ensure the Puppet code directory exists
       ansible.builtin.file:
@@ -62,7 +128,7 @@
     - name: Apply the base Puppet manifest
       ansible.builtin.command:
         cmd: >-
-          /opt/puppetlabs/bin/puppet apply
+          {{ puppet_bin }} apply
           --modulepath={{ puppet_code_dir }}/modules
           --detailed-exitcodes
           {{ puppet_code_dir }}/manifests/site.pp
