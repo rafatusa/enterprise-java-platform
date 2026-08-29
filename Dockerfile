@@ -15,16 +15,26 @@ RUN mvn -B -ntp clean package -DskipTests
 # ---- Runtime stage -----------------------------------------------------------
 FROM eclipse-temurin:17-jre-jammy
 
-# Run as an unprivileged user: a container that never needs root should not have it.
-RUN groupadd --system --gid 1001 appuser \
- && useradd --system --uid 1001 --gid appuser --home /app --shell /usr/sbin/nologin appuser \
- && apt-get update \
+# Base-image package patches BEFORE anything else.
+#
+# Published base images are rebuilt on a cadence, so between rebuilds they carry
+# distro CVEs (openssl, libgcrypt, zlib, …) that already HAVE a fix in the Ubuntu
+# archive. The container scan runs with --ignore-unfixed, meaning every finding
+# it reports is one an upgrade can clear — so `apt-get upgrade` here is the
+# direct remedy for the gate rather than a workaround for it.
+# Kept in the same layer as the install + cache cleanup so no apt lists remain.
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends curl \
+ && groupadd --system --gid 1001 appuser \
+ && useradd --system --uid 1001 --gid appuser --home /app --shell /usr/sbin/nologin appuser \
+ && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=build --chown=appuser:appuser /build/target/app.jar /app/app.jar
 
+# Run as an unprivileged user: a container that never needs root should not have it.
 USER appuser
 
 # In-container the app listens on all interfaces; network isolation is the
