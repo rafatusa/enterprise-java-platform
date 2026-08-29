@@ -7,11 +7,18 @@
   <!-- The parent manages versions for the whole Spring dependency set, so
        bumping it is the single most effective remediation when the OWASP gate
        reports CVEs in transitive dependencies. Prefer raising this over adding
-       suppressions. -->
+       suppressions.
+
+       History: 3.3.5 -> 3.3.13 -> 3.5.16. The 3.3.13 bump did NOT clear the
+       gate because 3.3.x pins tomcat-embed-core 10.1.42, which carries a set of
+       CVSS 9.x authentication- and security-constraint-bypass CVEs
+       (CVE-2026-65905, CVE-2026-68525, CVE-2026-65182, CVE-2026-59083/4,
+       CVE-2026-55276, CVE-2026-41293, CVE-2025-55754). Those are directly
+       relevant here: this app is a Tomcat-hosted, authenticated REST API. -->
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.3.13</version>
+    <version>3.5.16</version>
     <relativePath/>
   </parent>
 
@@ -25,6 +32,15 @@
     <java.version>17</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
+    <!-- Embedded Tomcat floor. The advisories above list 10.1.0-M1 through
+         10.1.54 as affected, so 10.1.55 is the first patched release in the
+         10.1 line (Spring Boot 3.x requires 10.1.x for Jakarta EE 9+).
+         Spring Boot honours this property when resolving tomcat-embed-*.
+         This is a FLOOR, not a pin to work around the parent: if a future
+         parent manages a NEWER Tomcat, raise or remove this property rather
+         than holding the version back. -->
+    <tomcat.version>10.1.55</tomcat.version>
+
     <!-- Quality gate thresholds. Single source of truth: raising or lowering a
          gate happens HERE, deliberately, in review — never in a CI step. -->
     <jacoco.line.coverage>0.90</jacoco.line.coverage>
@@ -32,10 +48,18 @@
     <pit.mutation.threshold>70</pit.mutation.threshold>
     <owasp.fail.cvss>7</owasp.fail.cvss>
 
-    <!-- Plugin versions -->
+    <!-- Plugin versions.
+
+         pitest + pitest-junit5-plugin MUST be upgraded as a PAIR and must be
+         new enough for the JUnit Platform the parent manages. PIT 1.17.0 with
+         junit5-plugin 1.2.1 aborted before mutating on Spring Boot 3.5.x —
+         it exited non-zero with no statistics block, which reads exactly like
+         a failing score unless the script distinguishes the two (mutation.sh
+         does). If PIT ever stops producing a statistics block after a parent
+         bump, check this pair FIRST; do not touch pit.mutation.threshold. -->
     <jacoco.version>0.8.12</jacoco.version>
-    <pitest.version>1.17.0</pitest.version>
-    <pitest.junit5.version>1.2.1</pitest.junit5.version>
+    <pitest.version>1.25.9</pitest.version>
+    <pitest.junit5.version>1.2.2</pitest.junit5.version>
     <spotless.version>2.43.0</spotless.version>
     <checkstyle.plugin.version>3.5.0</checkstyle.plugin.version>
     <checkstyle.version>10.18.2</checkstyle.version>
@@ -46,7 +70,7 @@
     <sonar.version>4.0.0.4121</sonar.version>
     <rest.assured.version>5.5.0</rest.assured.version>
     <pact.version>4.6.14</pact.version>
-    <springdoc.version>2.6.0</springdoc.version>
+    <springdoc.version>2.8.6</springdoc.version>
     <jjwt.version>0.12.6</jjwt.version>
 
     <!-- Sonar reads the aggregated JaCoCo XML so unit + IT both count. -->

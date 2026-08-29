@@ -22,9 +22,60 @@
      the gate for every dependency, forever, invisibly. This file at least makes
      each exemption reviewable in a diff.
 
-  Currently empty: no exemptions are in force. Remediation so far has been by
-  upgrading spring-boot-starter-parent, which is always the preferred fix
-  because it moves the whole managed dependency set at once.
+  Remediation is always attempted by UPGRADING first: the Tomcat CVEs reported
+  against 10.1.42 were fixed by raising spring-boot-starter-parent to 3.5.16 and
+  setting a tomcat.version floor of 10.1.55 — NOT by suppression. The two
+  entries below are cases where the scanner's version range or affected
+  component genuinely does not match this project.
 -->
 <suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+
+  <!--
+    CVE-2026-40974 — Spring Boot Cassandra auto-configuration does not perform
+    hostname verification on the SSL connection to Cassandra.
+
+    NOT APPLICABLE, two independent reasons:
+      1. The advisory's own affected-version list is "Spring Boot 4.0.0". This
+         project builds on the 3.5.x line, so the range does not match; the
+         finding comes from CPE matching on the artifact name, not the version.
+      2. There is no Cassandra dependency and no Cassandra auto-configuration in
+         this project. The only datastore is PostgreSQL via spring-boot-starter-
+         data-jpa, and the driver is org.postgresql:postgresql.
+
+    Re-review by: 2026-11-27 (90 days). If the project ever adds Cassandra, this
+    entry MUST be removed and the finding re-assessed.
+  -->
+  <suppress>
+    <notes><![CDATA[
+      Cassandra auto-configuration is not present in this project (PostgreSQL/JPA
+      only) and the advisory targets Spring Boot 4.0.0 while this build is on
+      3.5.x. Re-review by 2026-11-27.
+    ]]></notes>
+    <cve>CVE-2026-40974</cve>
+  </suppress>
+
+  <!--
+    CVE-2026-41855 — deserialization of untrusted data in
+    org.springframework.jms.support.converter.MappingJackson2MessageConverter
+    (and the Jackson-based JMS converters) in an untrusted JMS environment.
+
+    NOT APPLICABLE: this project has no JMS. There is no jakarta.jms dependency,
+    no spring-jms on the classpath, no message listener, no broker connection and
+    no MappingJackson2MessageConverter bean. The vulnerable class is not present
+    and cannot be reached. The finding is reported against spring-core and
+    spring-web because the CPE match is at the "spring framework" product level
+    rather than the affected module.
+
+    Re-review by: 2026-11-27 (90 days). If messaging is ever introduced, remove
+    this entry first and re-assess before wiring a broker.
+  -->
+  <suppress>
+    <notes><![CDATA[
+      No JMS in this project: no spring-jms/jakarta.jms dependency, no message
+      converters or listeners, no broker. The vulnerable class is absent from the
+      classpath. Re-review by 2026-11-27.
+    ]]></notes>
+    <cve>CVE-2026-41855</cve>
+  </suppress>
+
 </suppressions>

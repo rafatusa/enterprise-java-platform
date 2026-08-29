@@ -9,52 +9,43 @@
 # A previous version counted 'status="KILLED"' occurrences in mutations.xml and
 # printed "Mutation score: 0.0% ... Mutation gate passed." when PIT had actually
 # killed 31/34 — a number that contradicts its own verdict destroys trust in the
-# gate even when the verdict is right. If the score cannot be determined, say so
-# explicitly rather than printing a fabricated 0.
+# gate even when the verdict is right.
+#
+# THREE states, as everywhere else in this pipeline:
+#   passed      -> score met the threshold
+#   findings    -> genuine surviving mutants; write tests
+#   tool-error  -> PIT never completed a run; fix the toolchain, NOT the tests
 set -uo pipefail
 
 REPORT_DIR="reports/pit"
 EXIT_FILE="${REPORT_DIR}/pit.exit"
+STATUS_FILE="${REPORT_DIR}/status"
 SUMMARY_FILE="${REPORT_DIR}/pit-summary.txt"
-XML="${REPORT_DIR}/mutations.xml"
-
-report_score() {
-  # Preferred: PIT's own summary line, e.g.
-  #   >> Generated 34 mutations Killed 31 (91%)
-  if [ -f "$SUMMARY_FILE" ] && [ -s "$SUMMARY_FILE" ]; then
-    local line total killed pct
-    line="$(cat "$SUMMARY_FILE")"
-    total="$(sed -E 's/.*Generated ([0-9]+) mutations.*/\1/' <<<"$line")"
-    killed="$(sed -E 's/.*Killed ([0-9]+).*/\1/' <<<"$line")"
-    pct="$(sed -E 's/.*\(([0-9]+)%\).*/\1/' <<<"$line")"
-    if [ -n "$pct" ]; then
-      echo "Mutation score: ${pct}% (${killed}/${total} mutants killed, threshold 70%)"
-      return 0
-    fi
-  fi
-
-  # Fallback: count from mutations.xml. PIT writes status as an attribute; match
-  # either quoting style and any attribute order.
-  if [ -f "$XML" ]; then
-    local killed total
-    killed="$(grep -o "status=['\"]KILLED['\"]" "$XML" | wc -l | tr -d ' ')"
-    total="$(grep -c '<mutation' "$XML" | tr -d ' ')"
-    if [ "${total:-0}" -gt 0 ]; then
-      awk -v k="$killed" -v t="$total" \
-        'BEGIN { printf "Mutation score: %.1f%% (%d/%d mutants killed, threshold 70%%)\n", (k/t)*100, k, t }'
-      return 0
-    fi
-  fi
-
-  echo "::warning::Could not determine the mutation score from PIT output; the verdict below comes from PIT's own threshold check."
-  return 0
-}
-
-report_score
 
 if [ ! -f "$EXIT_FILE" ]; then
   echo "::error::PIT produced no result file — the mutation stage did not run correctly."
   exit 1
+fi
+
+# A run that never produced statistics is a toolchain failure, not a low score.
+if [ -f "$STATUS_FILE" ] && [ "$(cat "$STATUS_FILE")" = "tool-error" ]; then
+  echo "::error::Mutation gate FAILED — PIT did not complete a mutation run."
+  [ -f "${REPORT_DIR}/error" ] && cat "${REPORT_DIR}/error"
+  echo "This is NOT a low mutation score — no score was produced, so the code is"
+  echo "UNVERIFIED by mutation testing. Check the 'PIT failure output' group above:"
+  echo "a PIT/pitest-junit5-plugin version that predates the project's JUnit"
+  echo "Platform is the usual cause. Do NOT lower pit.mutation.threshold."
+  exit 1
+fi
+
+if [ -f "$SUMMARY_FILE" ] && [ -s "$SUMMARY_FILE" ]; then
+  line="$(cat "$SUMMARY_FILE")"
+  total="$(sed -E 's/.*Generated ([0-9]+) mutations.*/\1/' <<<"$line")"
+  killed="$(sed -E 's/.*Killed ([0-9]+).*/\1/' <<<"$line")"
+  pct="$(sed -E 's/.*\(([0-9]+)%\).*/\1/' <<<"$line")"
+  if [ -n "$pct" ]; then
+    echo "Mutation score: ${pct}% (${killed}/${total} mutants killed, threshold 70%)"
+  fi
 fi
 
 CODE="$(cat "$EXIT_FILE")"
