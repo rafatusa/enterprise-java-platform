@@ -178,30 +178,24 @@ stages:
       # ==================================================================
       # TEMPORARY, USER-AUTHORISED WAIVER — REMOVE AFTER THE FIRST DEPLOY
       # ==================================================================
-      # Set to "critical-only" for exactly ONE run, on the explicit
-      # instruction of the repository owner (2026-08-29), so that the
-      # provision/configure/verify/perf stages — which have NEVER executed —
-      # can finally be exercised against real AWS.
+      # Set to "critical-only" on the explicit instruction of the
+      # repository owner (2026-08-29), so that the configure/verify/perf
+      # stages — which have never completed — can be exercised.
       #
       # WHAT IT DOES: dependency-scan-gate.sh downgrades HIGH-severity
-      # findings to warnings. CRITICAL still hard-fails. Nothing else
-      # changes: both scanners run identically, at full severity, and every
-      # finding is still printed and uploaded. failBuildOnCVSS in pom.xml is
-      # UNCHANGED at 7 and the Trivy invocation still requests CRITICAL,HIGH.
-      # This is a reporting-threshold waiver, not a weakened scanner —
-      # removing this one line restores the gate completely.
+      # findings to warnings. CRITICAL still hard-fails, and a scanner that
+      # could not RUN still hard-fails. Both scanners still run at full
+      # severity and every finding is still printed and uploaded.
+      # failBuildOnCVSS in pom.xml is UNCHANGED at 7 and the Trivy
+      # invocation still requests CRITICAL,HIGH. This is a
+      # reporting-threshold waiver, not a weakened scanner.
       #
-      # WHAT IT WAIVES RIGHT NOW (attempt 8 evidence, 0 CRITICAL findings):
-      #   - CVE-2026-65898 (7.2) DOMPurify in the swagger-ui bundle. No fix
-      #     exists at any springdoc version; upgrading 2.8.6 -> 2.8.17 moved
-      #     swagger-ui 5.20.1 -> 5.32.2 and the CVE remained, because
-      #     DOMPurify is vendored inside the webjar.
-      #   - 1 HIGH in the PostgreSQL JDBC driver (SCRAM-SHA-256 MITM
-      #     protection bypass), reachable only on the loopback connection
-      #     between the app and on-host Postgres.
-      # The two Trivy MISCONFIGURATIONS it also reported are NOT waived —
-      # unrestricted egress is genuinely fixed in infra/ec2.tf, and the SSH
-      # ingress CIDR is now a documented variable.
+      # WHAT IT WAIVES: CVE-2026-65898 (7.2) — DOMPurify vendored inside the
+      # swagger-ui webjar, which no springdoc release fixes (2.8.6 -> 2.8.17
+      # moved swagger-ui 5.20.1 -> 5.32.2 and the CVE remained).
+      # The pgjdbc HIGH that was also waived on the previous run has since
+      # been FIXED by pinning postgresql.version to 42.7.13, and the two
+      # Trivy IaC findings are handled explicitly in .trivyignore.
       #
       # TO RESTORE THE FULL GATE: delete this env var. That is the entire
       # revert. Do it as the very next change after the first green deploy.
@@ -232,9 +226,8 @@ stages:
       IMAGE_TAG: ${{ github.sha }}
       REPO_OWNER: ${{ github.repository_owner }}
       # Same temporary waiver, same reason — see the note on dependency-scan.
-      # The container scan has NEVER run against a real image (docker is not
-      # available in the rehearsal sandbox), so this stage is also unproven.
-      # CRITICAL findings still block the push to GHCR.
+      # CRITICAL findings still block the push to GHCR, and an unscanned
+      # image is never published in any mode.
       SECURITY_GATE_MODE: critical-only
     steps:
       - name: Set up JDK 17
@@ -356,10 +349,14 @@ stages:
             -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
             -backend-config="region=$AWS_REGION"
           echo "ip=$(terraform output -raw public_ip)" >> "$GITHUB_OUTPUT"
+      # Ansible is INVOKED VIA PATH, never via a hardcoded install prefix.
+      # GitHub's ubuntu runner images ship ansible-core pre-installed under
+      # /opt/pipx/venvs with its binaries already on PATH, so `pipx install`
+      # correctly does nothing and ~/.local/bin/ansible-* NEVER EXISTS —
+      # which is exactly how this stage failed with exit 127. Install only if
+      # the binary is genuinely absent, then resolve everything through PATH.
       - name: Install Ansible and collections
-        run: |
-          pipx install ansible-core
-          ~/.local/bin/ansible-galaxy collection install community.general community.postgresql
+        run: bash scripts/ci/install-ansible.sh
       - name: Write SSH key
         run: |
           mkdir -p ~/.ssh
@@ -368,11 +365,11 @@ stages:
           ssh-keyscan -H "${{ steps.infra.outputs.ip }}" >> ~/.ssh/known_hosts
       - name: Puppet bootstrap (base server configuration)
         run: |
-          ~/.local/bin/ansible-playbook -i "${{ steps.infra.outputs.ip }}," -u "$SSH_USER" \
+          ansible-playbook -i "${{ steps.infra.outputs.ip }}," -u "$SSH_USER" \
             --private-key ~/.ssh/deploy_key ansible/puppet-bootstrap.yml
       - name: Ansible application deployment
         run: |
-          ~/.local/bin/ansible-playbook -i "${{ steps.infra.outputs.ip }}," -u "$SSH_USER" \
+          ansible-playbook -i "${{ steps.infra.outputs.ip }}," -u "$SSH_USER" \
             --private-key ~/.ssh/deploy_key ansible/site.yml \
             -e "db_password=$DB_PASSWORD" \
             -e "jwt_secret=$JWT_SECRET" \
@@ -404,9 +401,12 @@ stages:
             -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
             -backend-config="region=$AWS_REGION"
           echo "ip=$(terraform output -raw public_ip)" >> "$GITHUB_OUTPUT"
+      # Same PATH discipline as configure — verify-with-rollback.sh shells out
+      # to ansible-playbook for the rollback path, so it must resolve here too.
       - name: Install Ansible for the rollback path
+        run: bash scripts/ci/install-ansible.sh
+      - name: Prepare SSH access for the rollback path
         run: |
-          pipx install ansible-core
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key

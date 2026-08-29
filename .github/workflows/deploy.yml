@@ -339,11 +339,7 @@ jobs:
         \ }}/terraform.tfstate\" \\\n  -backend-config=\"region=$AWS_REGION\"\necho\
         \ \"ip=$(terraform output -raw public_ip)\" >> \"$GITHUB_OUTPUT\"\n"
     - name: Install Ansible and collections
-      run: 'pipx install ansible-core
-
-        ~/.local/bin/ansible-galaxy collection install community.general community.postgresql
-
-        '
+      run: bash scripts/ci/install-ansible.sh
     - name: Write SSH key
       run: 'mkdir -p ~/.ssh
 
@@ -355,14 +351,13 @@ jobs:
 
         '
     - name: Puppet bootstrap (base server configuration)
-      run: "~/.local/bin/ansible-playbook -i \"${{ steps.infra.outputs.ip }},\" -u\
-        \ \"$SSH_USER\" \\\n  --private-key ~/.ssh/deploy_key ansible/puppet-bootstrap.yml\n"
+      run: "ansible-playbook -i \"${{ steps.infra.outputs.ip }},\" -u \"$SSH_USER\"\
+        \ \\\n  --private-key ~/.ssh/deploy_key ansible/puppet-bootstrap.yml\n"
     - name: Ansible application deployment
-      run: "~/.local/bin/ansible-playbook -i \"${{ steps.infra.outputs.ip }},\" -u\
-        \ \"$SSH_USER\" \\\n  --private-key ~/.ssh/deploy_key ansible/site.yml \\\n\
-        \  -e \"db_password=$DB_PASSWORD\" \\\n  -e \"jwt_secret=$JWT_SECRET\" \\\n\
-        \  -e \"app_auth_password=$APP_AUTH_PASSWORD\" \\\n  -e \"app_version=$APP_VERSION\"\
-        \n"
+      run: "ansible-playbook -i \"${{ steps.infra.outputs.ip }},\" -u \"$SSH_USER\"\
+        \ \\\n  --private-key ~/.ssh/deploy_key ansible/site.yml \\\n  -e \"db_password=$DB_PASSWORD\"\
+        \ \\\n  -e \"jwt_secret=$JWT_SECRET\" \\\n  -e \"app_auth_password=$APP_AUTH_PASSWORD\"\
+        \ \\\n  -e \"app_version=$APP_VERSION\"\n"
   verify:
     runs-on: ubuntu-latest
     needs:
@@ -388,9 +383,9 @@ jobs:
         \ }}/terraform.tfstate\" \\\n  -backend-config=\"region=$AWS_REGION\"\necho\
         \ \"ip=$(terraform output -raw public_ip)\" >> \"$GITHUB_OUTPUT\"\n"
     - name: Install Ansible for the rollback path
-      run: 'pipx install ansible-core
-
-        mkdir -p ~/.ssh
+      run: bash scripts/ci/install-ansible.sh
+    - name: Prepare SSH access for the rollback path
+      run: 'mkdir -p ~/.ssh
 
         printf ''%s\n'' "$SSH_KEY" > ~/.ssh/deploy_key
 

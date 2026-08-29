@@ -6,6 +6,15 @@
 # the rollback playbook to restore the previous release before exiting non-zero.
 # That is more robust than a CI conditional — the rollback decision lives with
 # the check that makes it, and cannot be skipped by a cancelled job step.
+#
+# ansible-playbook is invoked THROUGH PATH, never through a hardcoded installer
+# prefix. An earlier version called ~/.local/bin/ansible-playbook, which does not
+# exist on GitHub runners (ansible-core ships pre-installed under /opt/pipx and
+# is already on PATH). That bug broke the configure stage outright, and it would
+# have broken THIS script's rollback at the worst possible moment: after a
+# deployment had already failed, when the rollback is the only thing standing
+# between a bad release and an outage. scripts/ci/install-ansible.sh guarantees
+# the binary resolves before this script runs.
 set -uo pipefail
 
 : "${TARGET_HOST:?TARGET_HOST must be set}"
@@ -50,7 +59,17 @@ if [ ! -f ~/.ssh/deploy_key ]; then
   exit 1
 fi
 
-if ~/.local/bin/ansible-playbook \
+# Check the tool BEFORE relying on it, so a missing ansible is reported as
+# "rollback could not run" rather than as a cryptic 127 inside the rollback.
+if ! command -v ansible-playbook >/dev/null 2>&1; then
+  echo "::error::ansible-playbook is not on PATH — cannot roll back automatically."
+  echo "The configure/verify stages install it via scripts/ci/install-ansible.sh."
+  echo "- Result: ROLLBACK NOT ATTEMPTED (ansible-playbook unavailable)." \
+    >> reports/deployment/deployment-summary.md
+  exit 1
+fi
+
+if ansible-playbook \
   -i "${TARGET_HOST}," \
   -u "$SSH_USER" \
   --private-key ~/.ssh/deploy_key \
