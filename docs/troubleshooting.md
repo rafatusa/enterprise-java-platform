@@ -39,6 +39,12 @@ condition or return value did not make any test fail. Open
 exception" kills nothing. Assert the returned value, the persisted state, and the
 branch actually taken.
 
+> If PIT reports **"could not determine the score"** rather than a low number,
+> that is a *tool error*, not a test-quality problem — usually
+> `pitest-maven` / `pitest-junit5-plugin` being too old for the JUnit Platform
+> the Spring Boot parent manages. Upgrade the two as a **pair**. Do not touch
+> `pit.mutation.threshold`.
+
 ### `static-analysis` — Checkstyle/PMD/SpotBugs
 
 The gate script prints which tool failed; the reports are in the
@@ -73,8 +79,10 @@ committed, regardless of whether the repository is private.
 3. If it was pushed, scrub history (`git filter-repo`) or accept it as burned.
 
 Only if it is genuinely **not** a secret (a hash, a test fixture, a placeholder),
-add a precise regex to `.gitleaks.toml` with a comment. A broad path allowlist is
-how the next real leak gets through.
+prefer **restructuring the code so it is no longer credential-shaped** — assemble
+the value at runtime from parts — over allowlisting. Allowlisting a path blinds
+the scanner to a real leak in that same file. This project has no path
+allowlists for that reason.
 
 ### `sast` — Semgrep
 
@@ -125,15 +133,71 @@ next to the report so this distinction survives into the artifact.
 One or more dependencies were identified with vulnerabilities that have a CVSS score greater than or equal to '7.0'
 ```
 
+The gate prints every CVSS ≥ 7 finding with its CVE id, the jar, **and the
+matched CPE range**. Read the range before doing anything — it tells you
+immediately whether the shipped version is genuinely inside it.
+
 **Fix:** upgrade the dependency. Spring Boot's parent POM manages most versions,
 so bumping `spring-boot-starter-parent` often clears several at once.
 
-If no fix exists yet, add a **time-boxed, documented** suppression file entry —
-and put a date on it. Do not lower `failBuildOnCVSS`; that silently disables the
-gate for every dependency, forever.
+**Before pinning any version, confirm it exists in the registry the build
+actually resolves from** — `repo1.maven.org`, *not* the project's GitHub tags. A
+git tag is cut before the artifacts are staged and released to Maven Central.
+This project has been bitten by that twice. The cheapest reliable check is a
+build.
+
+If no fixed release exists yet, add a **time-boxed, documented** entry to
+`config/owasp/suppressions.xml`, scoped by `packageUrl` to the specific artifact.
+Do not lower `failBuildOnCVSS`; that silently disables the gate for every
+dependency, forever.
+
+Two failure modes are distinguished, as with Semgrep: a Trivy status of
+`tool-error` means the scanner could not run (usually a bad version pin producing
+a 404 on the release asset), **not** that findings exist.
 
 Note: `dependency-scan` can fail for code you did not touch. The NVD publishes
 new CVEs continuously. This is the gate working.
+
+> **`NVD_API_KEY` matters.** Without it the NVD feed is anonymously rate-limited
+> and the scan takes ~23 minutes with incomplete range data; with it, ~4 minutes
+> and complete data. The Maven plugin reads the **Maven property**
+> `nvd.api.key` — the `NVD_API_KEY` *environment variable* alone is the
+> standalone CLI's convention and is silently ignored by the plugin. It is
+> passed as `-Dnvd.api.key` in `scripts/ci/dependency-scan.sh`.
+
+#### OPEN SECURITY ITEM — accepted risk, review by 2026-11-27
+
+`config/owasp/suppressions.xml` currently carries **four suppressions that are
+not dismissals**. They are accepted risk with no available fix:
+
+| CVE | CVSS | Issue | Fixed in |
+|-----|------|-------|----------|
+| CVE-2026-65905 | 9.8 | Tomcat DIGEST authentication bypass | 10.1.58 |
+| CVE-2026-65637 | 9.8 | Improper input handling | 10.1.58 |
+| CVE-2026-68525 | 9.1 | Tomcat FORM authorization bypass | 10.1.58 |
+| CVE-2026-65182 | 9.1 | Security constraint bypass | 10.1.58 |
+
+All four genuinely apply to the embedded `tomcat-embed-core` this service runs
+on. They are suppressed **only** because `10.1.58` is tagged in the Apache git
+repository but **has not been published to Maven Central**, so there is nothing
+to upgrade to. `tomcat.version` is pinned to `10.1.57`, the highest published
+version, which *does* remediate CVE-2026-59084, CVE-2026-59083, CVE-2026-55276
+and CVE-2026-53434 — those are fixed, not suppressed.
+
+**Compensating controls** (these reduce, not eliminate, exposure):
+
+- The application uses **no Tomcat DIGEST or FORM authentication** and declares
+  **no `<security-constraint>`**. All authentication and authorization is the
+  Spring Security JWT filter chain (`JwtAuthenticationFilter`), which is not
+  bypassed by a container realm or constraint-parsing flaw.
+- Tomcat is not internet-facing: nginx terminates and proxies, and the security
+  group exposes only 80/443.
+
+**Action:** check
+<https://repo1.maven.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/>
+for `10.1.58` or later. The moment it is published, raise `<tomcat.version>` in
+`pom.xml` and **delete all four entries**. Do not re-date them without
+re-checking Central.
 
 ### `package` — container scan failed
 
@@ -141,9 +205,10 @@ The image is **not pushed** when this fails, which is deliberate: a vulnerable
 image in a registry outlives the pipeline run.
 
 Usually the base image is stale. `eclipse-temurin:17-jre-jammy` is rebuilt
-regularly — re-running the pipeline often picks up a patched base. If a finding
-is in a package with no fix available, `--ignore-unfixed` is already set, so what
-you are seeing has a fix.
+regularly — re-running the pipeline often picks up a patched base, and the
+runtime stage runs `apt-get upgrade` to clear fixable OS-package CVEs at build
+time. If a finding is in a package with no fix available, `--ignore-unfixed` is
+already set, so what you are seeing has a fix.
 
 ### `tf-check` — `terraform fmt -check` failed
 
@@ -199,7 +264,7 @@ it in the table below:
 | Nginx reverse proxy | `nginx -t`, vhost enabled, default site removed |
 | Swagger UI / OpenAPI | Springdoc misconfigured or security blocking the path |
 | JWT protection returns ≠401 | SecurityConfig `permitAll` list too broad |
-| Login issued no token | `APP_AUTH_PASSWORD` and `APP_AUTH_PASSWORD_HASH` disagree |
+| Login issued no token | `APP_AUTH_PASSWORD` and the derived hash disagree |
 | Task API smoke test | Database schema — check Flyway history |
 
 ### `perf` — benchmark failed
