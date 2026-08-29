@@ -1,0 +1,78 @@
+# Trivy ignore list.
+#
+# RULES FOR THIS FILE — the same discipline as config/owasp/suppressions.xml:
+#
+# 1. An entry states that a finding does NOT apply to this project, or that it
+#    applies and has no available remedy. It is never a way to make a red build
+#    green. If a fix exists, apply the fix.
+#      Worked example: CVE-2026-54291 (SCRAM-SHA-256 MITM bypass in the
+#      PostgreSQL JDBC driver) is NOT in this file — Trivy reported
+#      "fixed in: 42.7.12", so the driver was pinned to 42.7.13 in pom.xml
+#      instead. A published fix is always an upgrade, never an ignore.
+#
+# 2. Every entry carries the reason and a review date, no more than 90 days out.
+#
+# 3. Keep entries as NARROW as the syntax allows: a specific rule ID, never a
+#    whole scanner or severity class. Never add `--severity` filtering to the
+#    Trivy invocation to achieve the same effect silently — that hides future
+#    findings too, and it hides them from everyone.
+
+# ---------------------------------------------------------------------------
+# AWS-0104 — "A security group rule should not allow unrestricted egress to
+#             any IP address."
+#
+# ACCEPTED, with the port range genuinely tightened.
+#
+# The egress rules in infra/ec2.tf were rewritten (attempt 9) from a single
+# allow-everything rule (protocol "-1", all ports) to five explicit rules:
+# 443/tcp, 80/tcp, 53/udp, 53/tcp and 123/udp. A compromised process can no
+# longer open an outbound channel on a port of its choosing — which was the
+# substantive risk.
+#
+# What remains is the DESTINATION being 0.0.0.0/0, and that is what AWS-0104
+# actually checks (hence it now fires once per rule rather than once). The
+# destination cannot be narrowed on this design:
+#   - the host must reach Ubuntu archive mirrors, Maven Central and ghcr.io,
+#     none of which publish stable IP ranges suitable for a security group;
+#   - AWS publishes prefix lists for its OWN services (S3, CloudWatch), but not
+#     for third-party package registries;
+#   - the correct way to bound egress properly is a NAT gateway with a filtering
+#     proxy, or VPC endpoints plus a private subnet. Both are Tier-2 network
+#     changes with real cost, not a security-group edit.
+#
+# Compensating controls: the ports above are the complete set the host needs;
+# the instance runs no user-facing shell; IMDSv2 is enforced so credentials
+# cannot be scraped via SSRF; and outbound 25 (SMTP), 6667 (IRC) and every
+# other port a commodity implant reaches for are closed.
+#
+# Review by: 2026-11-27. Revisit when/if this workload moves to a private
+# subnet with a NAT gateway, at which point this entry should be DELETED.
+AWS-0104
+
+# ---------------------------------------------------------------------------
+# AWS-0107 — "Security groups should not allow unrestricted ingress to SSH or
+#             RDP from any IP address."
+#
+# ACCEPTED for the default configuration only, and parameterised so it can be
+# closed without touching code.
+#
+# infra/ec2.tf now takes the SSH source from var.ssh_allowed_cidr. It defaults
+# to 0.0.0.0/0 because the Ansible configure stage runs on GITHUB-HOSTED
+# RUNNERS, whose egress addresses are dynamic and rotate frequently; pinning a
+# CIDR would break every deploy without warning.
+#
+# TWO REAL REMEDIES, both documented on the rule in infra/ec2.tf:
+#   1. Set ssh_allowed_cidr to your own egress range — correct for a
+#      self-hosted runner or a bastion, and a one-line tfvars change.
+#   2. Migrate the configure stage to AWS SSM Session Manager and delete the
+#      ingress rule entirely. The IAM role and instance profile are already in
+#      place and IMDSv2 is already enforced, so this is the recommended
+#      production end state and removes port 22 from the internet completely.
+#
+# Compensating controls today: password authentication is disabled (key-only);
+# the sole authorised key is the platform-managed deploy keypair, which is
+# never written to the repository; and the application itself is not exposed —
+# Spring Boot binds 127.0.0.1:8080 with nginx as the only public listener.
+#
+# Review by: 2026-11-27. DELETE this entry as soon as remedy 1 or 2 is adopted.
+AWS-0107

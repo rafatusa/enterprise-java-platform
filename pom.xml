@@ -74,6 +74,25 @@
          freezing the version. -->
     <tomcat.version>10.1.57</tomcat.version>
 
+    <!-- PostgreSQL JDBC driver floor.
+         Trivy's filesystem scan (which uses its own version-accurate database,
+         independent of the NVD feed) reported:
+           CVE-2026-54291  HIGH  org.postgresql:postgresql 42.7.11
+           fixed in: 42.7.12
+           "com.ongres.scram/scram-client: pgjdbc: Man-in-the-middle protection
+            bypass via SCRAM-SHA-256"
+         A published fix exists, so this is an UPGRADE, not an ignore entry.
+         Pinned to 42.7.13 (the newest patch in the line) rather than the exact
+         42.7.12 the scanner named, so the release also carries anything fixed
+         since. The Spring Boot parent honours this property when resolving the
+         driver.
+
+         Relevance here is real but bounded: the app connects to PostgreSQL over
+         loopback on the same host, so an on-path attacker would already need
+         local access. Fixed regardless — a published patch is never worth an
+         exception. -->
+    <postgresql.version>42.7.13</postgresql.version>
+
     <!-- Quality gate thresholds. Single source of truth: raising or lowering a
          gate happens HERE, deliberately, in review — never in a CI step. -->
     <jacoco.line.coverage>0.90</jacoco.line.coverage>
@@ -104,20 +123,27 @@
     <rest.assured.version>5.5.0</rest.assured.version>
     <pact.version>4.6.14</pact.version>
 
-    <!-- springdoc bundles swagger-ui, which in turn bundles DOMPurify. The
-         dependency gate reported CVE-2026-65898 (CVSS 7.2, DOMPurify < 3.4.11
-         fails to clone the ALLOWED_ATTR allowlist) against
-         swagger-ui-5.20.1.jar as shipped by springdoc 2.8.6.
+    <!-- springdoc bundles swagger-ui, which in turn bundles DOMPurify.
+         CVE-2026-65898 (CVSS 7.2, DOMPurify < 3.4.11 fails to clone the
+         ALLOWED_ATTR allowlist) is reported against the swagger-ui webjar.
 
-         Unlike the Tomcat findings this is a REAL, REACHABLE component: Swagger
-         UI is served to browsers at /swagger-ui.html, so a sanitiser bypass is
-         genuinely exposed. It is therefore fixed by UPGRADE, not suppressed.
-         2.8.17 is the newest release of the 2.8.x line (same Spring Boot 3.x
-         compatibility as 2.8.6, so a low-risk patch-level move) and carries a
-         newer swagger-ui bundle.
+         THE UPGRADE WAS TRIED AND DOES NOT FIX IT — do not try it again.
+         Raising springdoc 2.8.6 -> 2.8.17 moved swagger-ui 5.20.1 -> 5.32.2 and
+         the CVE persisted, because DOMPurify is VENDORED INSIDE the
+         swagger-ui-bundle.js / swagger-ui-es-bundle.js files. It is not a
+         separate Maven coordinate, so no dependencyManagement entry, exclusion
+         or version property can override it. The fix has to come from upstream
+         swagger-api/swagger-ui shipping DOMPurify >= 3.4.11, and then springdoc
+         picking that release up.
 
-         If a future scan still reports a DOMPurify CVE here, the remedy is a
-         newer springdoc — never a suppression: this component is reachable. -->
+         2.8.17 is kept because it is the newest 2.8.x (same Spring Boot 3.x
+         compatibility as 2.8.6) and carries every other swagger-ui fix.
+
+         This component IS reachable — Swagger UI is served to browsers at
+         /swagger-ui.html — so if it must be closed before upstream ships a fix,
+         the honest remedy is to disable the UI in the deployed profile
+         (springdoc.swagger-ui.enabled=false), not to pretend the finding does
+         not apply. -->
     <springdoc.version>2.8.17</springdoc.version>
     <jjwt.version>0.12.6</jjwt.version>
 

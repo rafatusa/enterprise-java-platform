@@ -87,6 +87,7 @@ verdict() {
   local dir="$2"
   local file="$3"
   local hint="$4"
+  local severity="$5"
 
   # A recorded tool-error takes precedence over the exit code, which is set to 1
   # only so that nothing downstream mistakes a failed scan for a clean one.
@@ -114,19 +115,37 @@ verdict() {
   local code
   code="$(cat "$file")"
   if [ "$code" != "0" ]; then
-    # Severity is resolved from the reports below; at the verdict level we do
-    # not yet know whether a CRITICAL is present, so the caller passes it.
-    gate_fail "$5" "${label} gate FAILED. ${hint}"
+    gate_fail "$severity" "${label} gate FAILED. ${hint}"
   else
     echo "${label} gate passed."
   fi
 }
 
-# Does the Trivy report contain any CRITICAL? Decides whether the Trivy verdict
-# is waivable. Grep on the JSON is sufficient and needs no interpreter.
+# --- Severity classification ------------------------------------------------
+#
+# Both classifiers below answer ONE question: "is there a CRITICAL here?" — a
+# CRITICAL is never waivable, a HIGH is (under critical-only mode).
+#
+# These must be STRUCTURAL, not textual. An earlier version grepped the Trivy
+# JSON for '"Severity": "CRITICAL"' anywhere in the file, which also matched
+# MISCONFIGURATION and SECRET entries — so a CRITICAL-severity IaC rule made
+# the whole Trivy verdict unwaivable even when zero CRITICAL vulnerabilities
+# existed. Parse the structure and look only where the answer actually lives.
+
+# Trivy: only Results[].Vulnerabilities[] counts toward the vulnerability
+# severity. Misconfigurations and secrets are reported separately below and are
+# managed through .trivyignore, not through this classification.
 TRIVY_SEVERITY="high"
 if [ -f "$REPORT_DIR/trivy-fs/trivy-fs-report.json" ] &&
-  grep -q '"Severity": *"CRITICAL"' "$REPORT_DIR/trivy-fs/trivy-fs-report.json"; then
+  python3 -c "
+import json, sys
+report = json.load(open('$REPORT_DIR/trivy-fs/trivy-fs-report.json'))
+for result in report.get('Results', []) or []:
+    for vuln in result.get('Vulnerabilities', []) or []:
+        if (vuln.get('Severity') or '').upper() == 'CRITICAL':
+            sys.exit(0)
+sys.exit(1)
+" 2>/dev/null; then
   TRIVY_SEVERITY="critical"
 fi
 
@@ -170,7 +189,8 @@ verdict "Trivy filesystem" "$REPORT_DIR/trivy-fs" "$REPORT_DIR/trivy-fs/trivy.ex
 # package DB), so print target + package + installed/fixed version — the fixed
 # version is the whole remediation in one field. Trivy uses its own
 # version-accurate database, so nothing in config/owasp/suppressions.xml
-# affects these findings: they are an independent gate.
+# affects these findings: they are an independent gate, managed through
+# .trivyignore.
 if [ -f "$REPORT_DIR/trivy-fs/trivy-fs-report.json" ]; then
   echo ""
   echo "::group::Trivy filesystem: CRITICAL and HIGH findings"
@@ -242,6 +262,8 @@ print(
     "\n  A finding with a fixed version is remediated by upgrading that package."
     "\n  '(no fix published)' means no upgrade exists yet — the same situation as"
     "\n  a documented, time-boxed OWASP suppression."
+    "\n  Misconfigurations are IaC rules; accepted ones live in .trivyignore"
+    "\n  with their reasoning and a review date."
 )
 PY
   echo "::endgroup::"
