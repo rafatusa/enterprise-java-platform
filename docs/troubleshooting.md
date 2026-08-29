@@ -133,9 +133,15 @@ next to the report so this distinction survives into the artifact.
 One or more dependencies were identified with vulnerabilities that have a CVSS score greater than or equal to '7.0'
 ```
 
-The gate prints every CVSS ≥ 7 finding with its CVE id, the jar, **and the
-matched CPE range**. Read the range before doing anything — it tells you
-immediately whether the shipped version is genuinely inside it.
+The **gate step** prints everything you need: for OWASP, each CVSS ≥ 7 finding
+with its CVE id, the jar, and the **matched CPE range**; for Trivy, each
+CRITICAL/HIGH with the package, installed version and **fixed version**. Read
+the range before doing anything — it tells you immediately whether the shipped
+version is genuinely inside it.
+
+> Findings are printed by the **gate** step, not the scan step. The scan step
+> always exits 0 (report-then-gate), so `gh run view --log-failed` only ever
+> shows the gate. Anything a human needs in order to diagnose belongs there.
 
 **Fix:** upgrade the dependency. Spring Boot's parent POM manages most versions,
 so bumping `spring-boot-starter-parent` often clears several at once.
@@ -146,8 +152,18 @@ git tag is cut before the artifacts are staged and released to Maven Central.
 This project has been bitten by that twice. The cheapest reliable check is a
 build.
 
+**After any version bump, re-read the scan.** A bump can move you *into* range
+for advisories that were not previously reported. Raising Tomcat 10.1.55 →
+10.1.57 fixed four CVEs and surfaced three new ones. Never assume a suppression
+set is stable across an upgrade.
+
 If no fixed release exists yet, add a **time-boxed, documented** entry to
-`config/owasp/suppressions.xml`, scoped by `packageUrl` to the specific artifact.
+`config/owasp/suppressions.xml`. **Scope the `packageUrl` to every artifact the
+CVE is reported against** — the gate prints that list at the end of the OWASP
+group for exactly this reason. Tomcat's embed distribution ships as *both*
+`tomcat-embed-core` and `tomcat-embed-websocket`, and the same CVE is reported
+against both; a suppression scoped to one leaves the other red.
+
 Do not lower `failBuildOnCVSS`; that silently disables the gate for every
 dependency, forever.
 
@@ -167,36 +183,47 @@ new CVEs continuously. This is the gate working.
 
 #### OPEN SECURITY ITEM — accepted risk, review by 2026-11-27
 
-`config/owasp/suppressions.xml` currently carries **four suppressions that are
+`config/owasp/suppressions.xml` currently carries **seven suppressions that are
 not dismissals**. They are accepted risk with no available fix:
 
 | CVE | CVSS | Issue | Fixed in |
 |-----|------|-------|----------|
 | CVE-2026-65905 | 9.8 | Tomcat DIGEST authentication bypass | 10.1.58 |
-| CVE-2026-65637 | 9.8 | Improper input handling | 10.1.58 |
+| CVE-2026-65637 | 9.8 | Improper input validation | 10.1.58 |
 | CVE-2026-68525 | 9.1 | Tomcat FORM authorization bypass | 10.1.58 |
-| CVE-2026-65182 | 9.1 | Security constraint bypass | 10.1.58 |
+| CVE-2026-65182 | 9.1 | Security constraint bypass (longer path) | 10.1.58 |
+| CVE-2026-68569 | 8.1 | Improper authentication | 10.1.58 |
+| CVE-2026-66422 | 8.1 | `security-role-ref` used as Realm role alias | 10.1.58 |
+| CVE-2026-65183 | 8.1 | TOCTOU race creating unix domain sockets | 10.1.58 |
 
-All four genuinely apply to the embedded `tomcat-embed-core` this service runs
-on. They are suppressed **only** because `10.1.58` is tagged in the Apache git
-repository but **has not been published to Maven Central**, so there is nothing
-to upgrade to. `tomcat.version` is pinned to `10.1.57`, the highest published
-version, which *does* remediate CVE-2026-59084, CVE-2026-59083, CVE-2026-55276
-and CVE-2026-53434 — those are fixed, not suppressed.
+All seven genuinely apply to the embedded Tomcat this service runs on, and all
+are reported against **both** `tomcat-embed-core-10.1.57.jar` and
+`tomcat-embed-websocket-10.1.57.jar`. They are suppressed **only** because
+`10.1.58` is tagged in the Apache git repository but **has not been published to
+Maven Central**, so there is nothing to upgrade to.
+
+`tomcat.version` is pinned to `10.1.57`, the highest published version, which
+*does* remediate CVE-2026-59084, CVE-2026-59083, CVE-2026-55276 and
+CVE-2026-53434 — those are **fixed, not suppressed**, and no entry for them
+exists.
 
 **Compensating controls** (these reduce, not eliminate, exposure):
 
 - The application uses **no Tomcat DIGEST or FORM authentication** and declares
-  **no `<security-constraint>`**. All authentication and authorization is the
-  Spring Security JWT filter chain (`JwtAuthenticationFilter`), which is not
-  bypassed by a container realm or constraint-parsing flaw.
+  **no `<security-constraint>`** and **no `<security-role-ref>`**. All
+  authentication and authorization is the Spring Security JWT filter chain
+  (`JwtAuthenticationFilter`), which is never reached through a Tomcat Realm.
+  That covers the five Realm/constraint CVEs.
+- CVE-2026-65183 needs a **unix domain socket connector** and a local
+  unprivileged user. The connector is TCP on `127.0.0.1:8080`, no unix socket is
+  configured, and the box has no interactive users beyond the deploy account.
 - Tomcat is not internet-facing: nginx terminates and proxies, and the security
   group exposes only 80/443.
 
 **Action:** check
 <https://repo1.maven.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/>
 for `10.1.58` or later. The moment it is published, raise `<tomcat.version>` in
-`pom.xml` and **delete all four entries**. Do not re-date them without
+`pom.xml` and **delete all seven entries**. Do not re-date them without
 re-checking Central.
 
 ### `package` — container scan failed

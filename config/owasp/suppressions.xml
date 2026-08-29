@@ -28,9 +28,19 @@
      read as CPE range artifacts because the advisories also list an 11.x
      branch. Once an NVD API key was configured, the gate printed the matched
      ranges and they were unambiguous — >=10.1.0 <10.1.58 genuinely covered the
-     shipped version. They were REAL vulnerabilities. Half of them were then
-     FIXED by raising tomcat.version to 10.1.57; only the half with no
-     published fix are suppressed below.
+     shipped version. They were REAL vulnerabilities. Some were then FIXED by
+     raising tomcat.version; only those with no published fix are suppressed.
+
+  6. SCOPE A packageUrl TO EVERY ARTIFACT THE CVE IS REPORTED AGAINST.
+     Learned the hard way: the Tomcat entries below were first scoped to
+     `tomcat-embed-core` alone. spring-boot-starter-web pulls BOTH
+     tomcat-embed-core AND tomcat-embed-websocket from the same source tree, and
+     Dependency Check reports the identical CVEs against both jars — so the
+     gate stayed red on the websocket jar while the core jar was suppressed.
+     The gate step now prints the list of artifacts each finding was reported
+     against, precisely so this can be got right in one pass. Scope to the
+     narrowest pattern that covers all of them, never to a whole group "just in
+     case".
 
   TWO CATEGORIES OF ENTRY EXIST HERE — they are not equivalent:
     (A) VULNERABLE COMPONENT ABSENT — the affected module is not on the
@@ -97,39 +107,53 @@
   <!-- ==================================================================== -->
   <!-- CATEGORY B — ACCEPTED RISK: NO FIXED RELEASE PUBLISHED YET           -->
   <!--                                                                      -->
-  <!-- These four CVEs GENUINELY APPLY to the embedded Tomcat this service  -->
+  <!-- These SEVEN CVEs GENUINELY APPLY to the embedded Tomcat this service  -->
   <!-- runs on. They are suppressed ONLY because no fixed artifact is       -->
   <!-- available to upgrade to, not because they are harmless.              -->
   <!--                                                                      -->
   <!-- EVIDENCE (printed by the dependency gate against an authenticated    -->
-  <!-- NVD feed — these are correctly-matched ranges, not CPE artifacts):   -->
-  <!--   CVE-2026-65905 (9.8) >=10.1.0  <10.1.58   DIGEST auth bypass       -->
-  <!--   CVE-2026-65637 (9.8) >=10.1.53 <10.1.58   improper input handling  -->
-  <!--   CVE-2026-68525 (9.1) >=10.1.0  <10.1.58   FORM authz bypass        -->
-  <!--   CVE-2026-65182 (9.1) >=10.1.0  <10.1.58   security constraint      -->
-  <!--                                             bypass                   -->
+  <!-- NVD feed — correctly-matched ranges, not CPE artifacts). Every one   -->
+  <!-- of these is reported against BOTH tomcat-embed-core-10.1.57.jar AND  -->
+  <!-- tomcat-embed-websocket-10.1.57.jar, hence the group-wide packageUrl: -->
+  <!--   CVE-2026-65905 (9.8) >=10.1.0  <10.1.58  DIGEST auth bypass        -->
+  <!--   CVE-2026-65637 (9.8) >=10.1.53 <10.1.58  improper input handling   -->
+  <!--   CVE-2026-68525 (9.1) >=10.1.0  <10.1.58  FORM authz bypass         -->
+  <!--   CVE-2026-65182 (9.1) >=10.1.0  <10.1.58  security constraint       -->
+  <!--                                            bypass (longer path)      -->
+  <!--   CVE-2026-68569 (8.1) >=10.1.0  <10.1.58  improper authentication   -->
+  <!--   CVE-2026-66422 (8.1) >=10.1.0  <10.1.58  security-role-ref used as -->
+  <!--                                            role alias in the Realm   -->
+  <!--   CVE-2026-65183 (8.1) >=10.1.0  <10.1.58  TOCTOU race creating unix -->
+  <!--                                            domain sockets            -->
   <!--                                                                      -->
-  <!-- WHY NOT FIXED: every one of these needs tomcat-embed-core 10.1.58.   -->
-  <!-- 10.1.58 is TAGGED IN THE APACHE GIT REPO BUT HAS NOT BEEN PUBLISHED  -->
-  <!-- TO MAVEN CENTRAL. Setting it fails the build outright:               -->
+  <!-- WHY NOT FIXED: every one needs tomcat-embed 10.1.58. 10.1.58 IS      -->
+  <!-- TAGGED IN THE APACHE GIT REPO BUT HAS NOT BEEN PUBLISHED TO MAVEN    -->
+  <!-- CENTRAL. Setting it fails the build outright:                        -->
   <!--   Could not find artifact                                            -->
   <!--   org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.58 in central   -->
   <!-- A git tag is cut before artifacts are staged and released.           -->
   <!--                                                                      -->
   <!-- WHAT WAS FIXED INSTEAD: tomcat.version was raised to 10.1.57 (the    -->
-  <!-- highest version actually on Central), which genuinely REMEDIATES     -->
+  <!-- highest version actually on Central), which genuinely REMEDIATED     -->
   <!-- CVE-2026-59084, CVE-2026-59083, CVE-2026-55276 and CVE-2026-53434    -->
-  <!-- (ranges <=10.1.56 / <10.1.56). Those are NOT suppressed — they are   -->
-  <!-- fixed, and no entry for them exists in this file.                    -->
+  <!-- (ranges <=10.1.56 / <10.1.56). Those are FIXED, not suppressed, and  -->
+  <!-- no entry for them exists in this file — they no longer appear in the -->
+  <!-- scan at all. Note the bump also brought three NEW CVEs into range    -->
+  <!-- (68569 / 66422 / 65183): re-read the scan after EVERY version bump   -->
+  <!-- rather than assuming the suppression set is stable.                  -->
   <!--                                                                      -->
   <!-- COMPENSATING CONTROLS while this risk is accepted:                   -->
-  <!--   - The app does NOT use Tomcat DIGEST or FORM authentication. All   -->
-  <!--     authentication is stateless JWT enforced by a Spring Security    -->
-  <!--     filter chain (JwtAuthenticationFilter), which runs INSIDE the    -->
-  <!--     servlet container and is not bypassed by a Tomcat realm/         -->
-  <!--     security-constraint flaw. No <security-constraint> or <login-    -->
-  <!--     config> is declared anywhere in this project — authorization is  -->
-  <!--     entirely Spring Security's.                                      -->
+  <!--   - The app uses NO Tomcat DIGEST or FORM authentication and         -->
+  <!--     declares NO <security-constraint> and NO <security-role-ref>.    -->
+  <!--     All authentication and authorization is the Spring Security      -->
+  <!--     filter chain (JwtAuthenticationFilter, stateless JWT), which is  -->
+  <!--     not reached through a Tomcat Realm. That covers 65905, 68525,    -->
+  <!--     65182, 68569 and 66422 — all five are Realm/constraint paths     -->
+  <!--     this application never enables.                                  -->
+  <!--   - CVE-2026-65183 requires a UNIX DOMAIN SOCKET connector and a     -->
+  <!--     local unprivileged user on the box. The connector is TCP on      -->
+  <!--     127.0.0.1:8080; no unix socket is configured, and the instance   -->
+  <!--     has no interactive users beyond the deploy account.              -->
   <!--   - Tomcat is not internet-facing: nginx terminates and proxies, and -->
   <!--     the security group exposes only 80/443.                          -->
   <!--   These reduce, but do not eliminate, exposure. This remains an OPEN -->
@@ -138,7 +162,7 @@
   <!-- MANDATORY ACTION ON EXPIRY (2026-11-27) OR SOONER:                   -->
   <!--   Check https://repo1.maven.org/maven2/org/apache/tomcat/embed/      -->
   <!--   tomcat-embed-core/ for 10.1.58+. The moment it is there, raise     -->
-  <!--   <tomcat.version> in pom.xml and DELETE ALL FOUR entries below.     -->
+  <!--   <tomcat.version> in pom.xml and DELETE ALL SEVEN entries below.    -->
   <!--   Do not simply re-date them without re-checking Central.            -->
   <!-- ==================================================================== -->
 
@@ -146,27 +170,27 @@
     <notes><![CDATA[
       CATEGORY B (ACCEPTED RISK — no published fix). CVE-2026-65905, CVSS 9.8,
       Tomcat DIGEST authentication bypass, range >=10.1.0 <10.1.58. GENUINELY
-      APPLIES to tomcat-embed-core 10.1.57. Fixed release 10.1.58 is not yet on
-      Maven Central, so no upgrade exists. Compensating control: this app does
-      not use Tomcat DIGEST auth; authentication is stateless JWT via Spring
-      Security. Re-review by 2026-11-27 — upgrade to 10.1.58+ and DELETE this
-      entry as soon as the artifact is published.
+      APPLIES to tomcat-embed 10.1.57. Fixed release 10.1.58 is not yet on Maven
+      Central, so no upgrade exists. Compensating control: this app does not use
+      Tomcat DIGEST auth; authentication is stateless JWT via Spring Security.
+      Re-review by 2026-11-27 — upgrade to 10.1.58+ and DELETE this entry as
+      soon as the artifact is published.
     ]]></notes>
-    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-core@.*$</packageUrl>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
     <cve>CVE-2026-65905</cve>
   </suppress>
 
   <suppress>
     <notes><![CDATA[
       CATEGORY B (ACCEPTED RISK — no published fix). CVE-2026-65637, CVSS 9.8,
-      improper input handling, range >=10.1.53 <10.1.58. GENUINELY APPLIES to
-      tomcat-embed-core 10.1.57. Fixed release 10.1.58 is not yet on Maven
-      Central, so no upgrade exists. Compensating control: Tomcat is not
-      internet-facing (nginx proxies; only 80/443 exposed). Re-review by
-      2026-11-27 — upgrade to 10.1.58+ and DELETE this entry as soon as the
-      artifact is published.
+      improper input validation (incomplete fix for CVE-2026-32990), range
+      >=10.1.53 <10.1.58. GENUINELY APPLIES to tomcat-embed 10.1.57. Fixed
+      release 10.1.58 is not yet on Maven Central, so no upgrade exists.
+      Compensating control: Tomcat is not internet-facing (nginx proxies; only
+      80/443 exposed). Re-review by 2026-11-27 — upgrade to 10.1.58+ and DELETE
+      this entry as soon as the artifact is published.
     ]]></notes>
-    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-core@.*$</packageUrl>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
     <cve>CVE-2026-65637</cve>
   </suppress>
 
@@ -174,30 +198,78 @@
     <notes><![CDATA[
       CATEGORY B (ACCEPTED RISK — no published fix). CVE-2026-68525, CVSS 9.1,
       Tomcat FORM authentication authorization bypass, range >=10.1.0 <10.1.58.
-      GENUINELY APPLIES to tomcat-embed-core 10.1.57. Fixed release 10.1.58 is
-      not yet on Maven Central, so no upgrade exists. Compensating control: no
-      FORM login-config is declared; authorization is enforced by the Spring
-      Security filter chain, not a Tomcat realm. Re-review by 2026-11-27 —
-      upgrade to 10.1.58+ and DELETE this entry as soon as the artifact is
-      published.
+      GENUINELY APPLIES to tomcat-embed 10.1.57. Fixed release 10.1.58 is not
+      yet on Maven Central, so no upgrade exists. Compensating control: no FORM
+      login-config is declared; authorization is enforced by the Spring Security
+      filter chain, not a Tomcat realm. Re-review by 2026-11-27 — upgrade to
+      10.1.58+ and DELETE this entry as soon as the artifact is published.
     ]]></notes>
-    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-core@.*$</packageUrl>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
     <cve>CVE-2026-68525</cve>
   </suppress>
 
   <suppress>
     <notes><![CDATA[
       CATEGORY B (ACCEPTED RISK — no published fix). CVE-2026-65182, CVSS 9.1,
-      security constraint bypass, range >=10.1.0 <10.1.58. GENUINELY APPLIES to
-      tomcat-embed-core 10.1.57. Fixed release 10.1.58 is not yet on Maven
-      Central, so no upgrade exists. Compensating control: this project declares
-      no <security-constraint> — all authorization is Spring Security's
-      filter chain, which is unaffected by container constraint parsing.
+      security constraint bypass when a constraint for a longer path is
+      specified, range >=10.1.0 <10.1.58. GENUINELY APPLIES to tomcat-embed
+      10.1.57. Fixed release 10.1.58 is not yet on Maven Central, so no upgrade
+      exists. Compensating control: this project declares no
+      <security-constraint> — all authorization is Spring Security's filter
+      chain, which is unaffected by container constraint parsing. Re-review by
+      2026-11-27 — upgrade to 10.1.58+ and DELETE this entry as soon as the
+      artifact is published.
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
+    <cve>CVE-2026-65182</cve>
+  </suppress>
+
+  <suppress>
+    <notes><![CDATA[
+      CATEGORY B (ACCEPTED RISK — no published fix). CVE-2026-68569, CVSS 8.1,
+      improper authentication, range >=10.1.0 <10.1.58. Newly in range after
+      raising tomcat.version to 10.1.57. GENUINELY APPLIES to tomcat-embed
+      10.1.57. Fixed release 10.1.58 is not yet on Maven Central, so no upgrade
+      exists. Compensating control: no container-managed authentication is
+      configured; all authentication is the Spring Security JWT filter chain.
       Re-review by 2026-11-27 — upgrade to 10.1.58+ and DELETE this entry as
       soon as the artifact is published.
     ]]></notes>
-    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-core@.*$</packageUrl>
-    <cve>CVE-2026-65182</cve>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
+    <cve>CVE-2026-68569</cve>
+  </suppress>
+
+  <suppress>
+    <notes><![CDATA[
+      CATEGORY B (ACCEPTED RISK — no published fix). CVE-2026-66422, CVSS 8.1,
+      improper authorization caused by security-role-ref definitions being used
+      as role aliases within the Realm, range >=10.1.0 <10.1.58. Newly in range
+      after raising tomcat.version to 10.1.57. GENUINELY APPLIES to tomcat-embed
+      10.1.57. Fixed release 10.1.58 is not yet on Maven Central, so no upgrade
+      exists. Compensating control: this project declares no <security-role-ref>
+      and configures no Tomcat Realm; roles are evaluated by Spring Security.
+      Re-review by 2026-11-27 — upgrade to 10.1.58+ and DELETE this entry as
+      soon as the artifact is published.
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
+    <cve>CVE-2026-66422</cve>
+  </suppress>
+
+  <suppress>
+    <notes><![CDATA[
+      CATEGORY B (ACCEPTED RISK — no published fix). CVE-2026-65183, CVSS 8.1,
+      TOCTOU race condition when creating unix domain sockets, allowing an
+      unauthorised LOCAL user to access the socket. Range >=10.1.0 <10.1.58.
+      Newly in range after raising tomcat.version to 10.1.57. Fixed release
+      10.1.58 is not yet on Maven Central, so no upgrade exists. Compensating
+      control: the connector is TCP on 127.0.0.1:8080 — no unix domain socket
+      connector is configured — and the instance has no interactive local users
+      beyond the deploy account, so the local attacker precondition is not met.
+      Re-review by 2026-11-27 — upgrade to 10.1.58+ and DELETE this entry as
+      soon as the artifact is published.
+    ]]></notes>
+    <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
+    <cve>CVE-2026-65183</cve>
   </suppress>
 
 </suppressions>
