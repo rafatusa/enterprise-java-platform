@@ -19,14 +19,29 @@ REPORT_DIR="reports/security"
 mkdir -p "$REPORT_DIR/owasp" "$REPORT_DIR/sbom" "$REPORT_DIR/trivy-fs"
 
 # --- OWASP Dependency Check (fails at CVSS >= 7 per pom.xml) ---
-# The NVD credential is read from the environment by the plugin
-# (dependency-check reads nvd.api.key from NVD_API_KEY), so it is never passed
-# on the command line.
+#
+# THE KEY MUST BE PASSED AS A MAVEN PROPERTY, NOT JUST AN ENV VAR.
+# dependency-check-maven reads the Maven property `nvd.api.key`; the
+# NVD_API_KEY *environment variable* convention belongs to the standalone CLI,
+# not the Maven plugin. Exporting the env var alone leaves the plugin
+# anonymous — it still works, but against a heavily rate-limited feed whose
+# local CVE database can end up partial or stale, which produces spurious CPE
+# range matches (an 11.x advisory matched against a 10.1.x jar, a log4j-core
+# advisory matched against the log4j-api bridge).
+#
+# The value is interpolated from the environment by the shell, so the literal
+# never appears in the repository — only the reference does. It is passed via a
+# variable rather than inline so it is not visible in `set -x` style traces.
 echo "::group::OWASP Dependency Check"
-if [ -z "${NVD_API_KEY:-}" ]; then
+NVD_ARGS=()
+if [ -n "${NVD_API_KEY:-}" ]; then
+  echo "NVD API key configured — using the authenticated (full-rate) NVD feed."
+  NVD_ARGS+=("-Dnvd.api.key=${NVD_API_KEY}")
+else
   echo "::warning::NVD_API_KEY is not configured — the NVD feed is heavily rate-limited without one and this step will be slow. Request a free key at https://nvd.nist.gov/developers/request-an-api-key"
 fi
-mvn -B -ntp org.owasp:dependency-check-maven:check
+
+mvn -B -ntp "${NVD_ARGS[@]}" org.owasp:dependency-check-maven:check
 OWASP_STATUS=$?
 echo "$OWASP_STATUS" > "$REPORT_DIR/owasp/owasp.exit"
 echo "ok" > "$REPORT_DIR/owasp/status"

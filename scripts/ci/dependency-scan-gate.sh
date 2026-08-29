@@ -69,6 +69,13 @@ fi
 
 # Name the vulnerable dependencies in the log so the failure is actionable
 # without downloading the artifact.
+#
+# The MATCHED CPE and its version range are printed alongside each finding.
+# That evidence is what distinguishes a genuine vulnerability from a CPE
+# range-matching artifact — e.g. an advisory whose range is "Apache Tomcat
+# 11.0.20 through 11.x" matched against a tomcat-embed-core 10.1.x jar, or a
+# log4j-core advisory matched against the log4j-api bridge. Without it, the
+# only way to tell them apart is to read each CVE by hand.
 if [ -f "$REPORT_DIR/owasp/dependency-check-report.json" ]; then
   echo ""
   echo "::group::OWASP: dependencies with CVSS >= 7"
@@ -78,6 +85,28 @@ import sys
 
 with open(sys.argv[1]) as handle:
     report = json.load(handle)
+
+
+def version_range(vuln):
+    """Summarise the affected-version range the matcher used."""
+    parts = []
+    for sw in vuln.get("vulnerableSoftware", []) or []:
+        item = sw.get("software", sw) if isinstance(sw, dict) else {}
+        cpe = item.get("id") or item.get("name") or ""
+        bounds = []
+        for key, label in (
+            ("versionStartIncluding", ">="),
+            ("versionStartExcluding", ">"),
+            ("versionEndIncluding", "<="),
+            ("versionEndExcluding", "<"),
+        ):
+            if item.get(key):
+                bounds.append(f"{label}{item[key]}")
+        if cpe or bounds:
+            parts.append(f"{cpe} {' '.join(bounds)}".strip())
+    # Keep it short: the first couple of ranges carry the signal.
+    return parts[:2]
+
 
 hits = []
 for dep in report.get("dependencies", []):
@@ -90,13 +119,22 @@ for dep in report.get("dependencies", []):
         except (TypeError, ValueError):
             score = 0.0
         if score >= 7.0:
-            hits.append((score, dep.get("fileName", "?"), vuln.get("name", "?"),
-                         (vuln.get("description") or "").split(". ")[0][:160]))
+            hits.append(
+                (
+                    score,
+                    dep.get("fileName", "?"),
+                    vuln.get("name", "?"),
+                    (vuln.get("description") or "").split(". ")[0][:160],
+                    version_range(vuln),
+                )
+            )
 
-for score, name, cve, desc in sorted(hits, reverse=True):
+for score, name, cve, desc, ranges in sorted(hits, reverse=True):
     print(f"  CVSS {score:>4}  {cve}  in {name}")
     if desc:
         print(f"           {desc}")
+    for r in ranges:
+        print(f"           matched: {r}")
 
 print(f"\n  {len(hits)} finding(s) at or above CVSS 7.0")
 PY
@@ -107,6 +145,9 @@ if [ "$FAILED" -ne 0 ]; then
   echo ""
   echo "Security gate failed. Remediate the findings — do not lower failBuildOnCVSS"
   echo "or drop severities from the Trivy invocation to get a green run."
+  echo "If a finding's matched version range does not cover the jar's actual"
+  echo "version, it is a CPE mismatch: add a documented, time-boxed entry to"
+  echo "config/owasp/suppressions.xml naming the CVE and the evidence."
   exit 1
 fi
 
