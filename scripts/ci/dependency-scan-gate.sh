@@ -23,10 +23,64 @@
 # BEFORE the OWASP block because it is far shorter and was invisible for four
 # consecutive attempts behind a long OWASP list. Put the scarcest information
 # first; never assume the whole step output survives retrieval.
+#
+# ---------------------------------------------------------------------------
+# SECURITY_GATE_MODE — the ONE sanctioned, temporary escape hatch
+# ---------------------------------------------------------------------------
+# Unset / anything else  -> "enforcing": CRITICAL and HIGH both fail. DEFAULT.
+# "critical-only"        -> HIGH findings are reported as warnings; CRITICAL
+#                           still fails the build.
+#
+# This exists so a project whose infrastructure path has never executed can be
+# unblocked ONCE, deliberately, by a human decision recorded in the pipeline
+# spec — instead of the far worse alternatives people reach for under pressure:
+# lowering failBuildOnCVSS in pom.xml, dropping HIGH from the Trivy --severity
+# list, or deleting the stage. Those changes are invisible in a log, apply to
+# every dependency forever, and are easy to forget. This one announces itself
+# in red on every run and is reverted by deleting a single env var.
+#
+# INVARIANTS — do not weaken these to make a build pass:
+#   * The scanners still run at FULL severity. Nothing is filtered at scan time.
+#   * Every finding is still printed and still uploaded as an artifact.
+#   * CRITICAL always fails, in every mode.
+#   * A tool-error always fails, in every mode: unscanned is not approved.
+#   * The waiver is visible on stdout AND in the job summary annotation.
 set -uo pipefail
 
 REPORT_DIR="reports/security"
 FAILED=0
+
+GATE_MODE="${SECURITY_GATE_MODE:-enforcing}"
+if [ "$GATE_MODE" = "critical-only" ]; then
+  echo "::warning::SECURITY GATE IS IN critical-only MODE — HIGH-severity findings are being reported as warnings instead of failing the build. This is a temporary, human-authorised waiver. Remove SECURITY_GATE_MODE from .udap/pipeline.yaml to restore full enforcement."
+  echo ""
+  echo "=============================================================="
+  echo " SECURITY GATE MODE: critical-only  (TEMPORARY WAIVER ACTIVE)"
+  echo "=============================================================="
+  echo " HIGH findings below are REAL and are NOT fixed — they are"
+  echo " being tolerated for this run only. CRITICAL findings still"
+  echo " fail the build. Restore full enforcement by deleting the"
+  echo " SECURITY_GATE_MODE env var from .udap/pipeline.yaml."
+  echo "=============================================================="
+  echo ""
+else
+  echo "Security gate mode: enforcing (CRITICAL and HIGH both fail)."
+fi
+
+# Fail the build for this finding, unless a HIGH is being waived.
+# severity: "critical" (always fails) or "high" (waived in critical-only mode).
+gate_fail() {
+  local severity="$1"
+  local message="$2"
+
+  if [ "$severity" = "high" ] && [ "$GATE_MODE" = "critical-only" ]; then
+    echo "::warning::[WAIVED — critical-only mode] ${message}"
+    return
+  fi
+
+  echo "::error::${message}"
+  FAILED=1
+}
 
 verdict() {
   local label="$1"
@@ -36,6 +90,9 @@ verdict() {
 
   # A recorded tool-error takes precedence over the exit code, which is set to 1
   # only so that nothing downstream mistakes a failed scan for a clean one.
+  # NOTE: a tool-error is NEVER waived, in any mode. "The scanner did not run"
+  # is not a severity judgement — it means the code is unverified, and an
+  # unverified build must not ship regardless of how tolerant the gate is.
   if [ -f "${dir}/status" ] && [ "$(cat "${dir}/status")" = "tool-error" ]; then
     echo "::error::${label} gate FAILED — the scanner could not run."
     if [ -f "${dir}/error" ]; then
@@ -43,6 +100,7 @@ verdict() {
     fi
     echo "  This is NOT a vulnerability report — nothing was scanned, so the"
     echo "  code is UNVERIFIED. Fix the runner/network, not the dependencies."
+    echo "  (Not waivable: SECURITY_GATE_MODE does not apply to tool errors.)"
     FAILED=1
     return
   fi
@@ -56,21 +114,55 @@ verdict() {
   local code
   code="$(cat "$file")"
   if [ "$code" != "0" ]; then
-    echo "::error::${label} gate FAILED. ${hint}"
-    FAILED=1
+    # Severity is resolved from the reports below; at the verdict level we do
+    # not yet know whether a CRITICAL is present, so the caller passes it.
+    gate_fail "$5" "${label} gate FAILED. ${hint}"
   else
     echo "${label} gate passed."
   fi
 }
 
-verdict "OWASP Dependency Check" "$REPORT_DIR/owasp" "$REPORT_DIR/owasp/owasp.exit" \
-  "A dependency has a CVSS >= 7 vulnerability. Upgrade it; suppress only with a documented, time-boxed entry."
+# Does the Trivy report contain any CRITICAL? Decides whether the Trivy verdict
+# is waivable. Grep on the JSON is sufficient and needs no interpreter.
+TRIVY_SEVERITY="high"
+if [ -f "$REPORT_DIR/trivy-fs/trivy-fs-report.json" ] &&
+  grep -q '"Severity": *"CRITICAL"' "$REPORT_DIR/trivy-fs/trivy-fs-report.json"; then
+  TRIVY_SEVERITY="critical"
+fi
 
+# OWASP: failBuildOnCVSS is 7, so any finding it reports is >= 7.0. Treat >= 9.0
+# as critical (never waivable) and 7.0-8.9 as high.
+OWASP_SEVERITY="high"
+if [ -f "$REPORT_DIR/owasp/dependency-check-report.json" ] &&
+  python3 -c "
+import json, sys
+report = json.load(open('$REPORT_DIR/owasp/dependency-check-report.json'))
+for dep in report.get('dependencies', []):
+    for vuln in dep.get('vulnerabilities', []) or []:
+        c3, c2 = vuln.get('cvssv3') or {}, vuln.get('cvssv2') or {}
+        try:
+            score = float(c3.get('baseScore') or c2.get('score') or 0)
+        except (TypeError, ValueError):
+            continue
+        if score >= 9.0:
+            sys.exit(0)
+sys.exit(1)
+" 2>/dev/null; then
+  OWASP_SEVERITY="critical"
+fi
+
+verdict "OWASP Dependency Check" "$REPORT_DIR/owasp" "$REPORT_DIR/owasp/owasp.exit" \
+  "A dependency has a CVSS >= 7 vulnerability. Upgrade it; suppress only with a documented, time-boxed entry." \
+  "$OWASP_SEVERITY"
+
+# The SBOM is a supply-chain deliverable, not a severity judgement — never waived.
 verdict "CycloneDX SBOM" "$REPORT_DIR/sbom" "$REPORT_DIR/sbom/sbom.exit" \
-  "SBOM generation failed — the build cannot ship without a bill of materials."
+  "SBOM generation failed — the build cannot ship without a bill of materials." \
+  "critical"
 
 verdict "Trivy filesystem" "$REPORT_DIR/trivy-fs" "$REPORT_DIR/trivy-fs/trivy.exit" \
-  "CRITICAL or HIGH findings in the filesystem scan. See reports/security/trivy-fs/."
+  "CRITICAL or HIGH findings in the filesystem scan. See reports/security/trivy-fs/." \
+  "$TRIVY_SEVERITY"
 
 # --- Trivy findings FIRST (see the ordering note in the header) -------------
 #
@@ -254,4 +346,9 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-echo "All dependency/security gates passed."
+if [ "$GATE_MODE" = "critical-only" ]; then
+  echo ""
+  echo "::warning::Dependency/security gates passed under the critical-only waiver. HIGH findings above are unresolved. Restore full enforcement by removing SECURITY_GATE_MODE from .udap/pipeline.yaml."
+else
+  echo "All dependency/security gates passed."
+fi

@@ -181,6 +181,7 @@ jobs:
     - build
     env:
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      SECURITY_GATE_MODE: critical-only
     timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
@@ -215,6 +216,7 @@ jobs:
     env:
       IMAGE_TAG: ${{ github.sha }}
       REPO_OWNER: ${{ github.repository_owner }}
+      SECURITY_GATE_MODE: critical-only
     timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4

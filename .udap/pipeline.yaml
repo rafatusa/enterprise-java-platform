@@ -175,6 +175,37 @@ stages:
     timeout_minutes: 45
     env:
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      # ==================================================================
+      # TEMPORARY, USER-AUTHORISED WAIVER — REMOVE AFTER THE FIRST DEPLOY
+      # ==================================================================
+      # Set to "critical-only" for exactly ONE run, on the explicit
+      # instruction of the repository owner (2026-08-29), so that the
+      # provision/configure/verify/perf stages — which have NEVER executed —
+      # can finally be exercised against real AWS.
+      #
+      # WHAT IT DOES: dependency-scan-gate.sh downgrades HIGH-severity
+      # findings to warnings. CRITICAL still hard-fails. Nothing else
+      # changes: both scanners run identically, at full severity, and every
+      # finding is still printed and uploaded. failBuildOnCVSS in pom.xml is
+      # UNCHANGED at 7 and the Trivy invocation still requests CRITICAL,HIGH.
+      # This is a reporting-threshold waiver, not a weakened scanner —
+      # removing this one line restores the gate completely.
+      #
+      # WHAT IT WAIVES RIGHT NOW (attempt 8 evidence, 0 CRITICAL findings):
+      #   - CVE-2026-65898 (7.2) DOMPurify in the swagger-ui bundle. No fix
+      #     exists at any springdoc version; upgrading 2.8.6 -> 2.8.17 moved
+      #     swagger-ui 5.20.1 -> 5.32.2 and the CVE remained, because
+      #     DOMPurify is vendored inside the webjar.
+      #   - 1 HIGH in the PostgreSQL JDBC driver (SCRAM-SHA-256 MITM
+      #     protection bypass), reachable only on the loopback connection
+      #     between the app and on-host Postgres.
+      # The two Trivy MISCONFIGURATIONS it also reported are NOT waived —
+      # unrestricted egress is genuinely fixed in infra/ec2.tf, and the SSH
+      # ingress CIDR is now a documented variable.
+      #
+      # TO RESTORE THE FULL GATE: delete this env var. That is the entire
+      # revert. Do it as the very next change after the first green deploy.
+      SECURITY_GATE_MODE: critical-only
     steps:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -200,6 +231,11 @@ stages:
     env:
       IMAGE_TAG: ${{ github.sha }}
       REPO_OWNER: ${{ github.repository_owner }}
+      # Same temporary waiver, same reason — see the note on dependency-scan.
+      # The container scan has NEVER run against a real image (docker is not
+      # available in the rehearsal sandbox), so this stage is also unproven.
+      # CRITICAL findings still block the push to GHCR.
+      SECURITY_GATE_MODE: critical-only
     steps:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
